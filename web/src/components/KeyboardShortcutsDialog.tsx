@@ -127,8 +127,6 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     items: [
       { label: "Focus previous pane", keys: [MOD_KEY, ALT_KEY, SHIFT_KEY, BRACKET_LEFT] },
       { label: "Focus next pane", keys: [MOD_KEY, ALT_KEY, SHIFT_KEY, BRACKET_RIGHT] },
-      { label: "Split terminal right", keys: SPLIT_TERMINAL_KEYS.columns },
-      { label: "Split terminal down", keys: SPLIT_TERMINAL_KEYS.rows },
     ],
   },
   {
@@ -222,9 +220,15 @@ function shortcutGroupsFor(
     if (group.title === "Panes") {
       return {
         ...group,
-        items: group.items.filter((item) =>
-          item.label.startsWith("Split") ? splitTerminal : grids || splitTerminal,
-        ),
+        items: [
+          ...(grids || splitTerminal ? group.items : []),
+          ...(splitTerminal
+            ? [
+                { label: "Split terminal right", keys: SPLIT_TERMINAL_KEYS.columns },
+                { label: "Split terminal down", keys: SPLIT_TERMINAL_KEYS.rows },
+              ]
+            : []),
+        ],
       };
     }
     return group;
