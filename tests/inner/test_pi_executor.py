@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 
 import pytest
 
+from omnigent.debug_logging import record_to_row
 from omnigent.inner.databricks_executor import DatabricksCredentials
 from omnigent.inner.executor import (
     ExecutorConfig,
@@ -944,6 +945,7 @@ class TestToolServer(unittest.TestCase):
         *,
         port: int,
         token: str,
+        args: dict | None = None,
         timeout: float = 5.0,
     ) -> dict:
         """Run the generated JS extension under Node and execute one tool.
@@ -969,6 +971,8 @@ class TestToolServer(unittest.TestCase):
             tmp_path = Path(tmp)
             extension_path = tmp_path / "omnigent_tools.js"
             runner_path = tmp_path / "run_bridge.js"
+            args_path = tmp_path / "args.json"
+            args_path.write_text(json.dumps(args if args is not None else {"input": "hello"}))
             extension_path.write_text(_generate_extension_js(port, schema, token))
             runner_path.write_text(
                 textwrap.dedent(
@@ -987,7 +991,7 @@ class TestToolServer(unittest.TestCase):
                       }
                       const result = await registered.execute(
                         "call-1",
-                        { input: "hello" },
+                        JSON.parse(require("fs").readFileSync(process.argv[3], "utf8")),
                         undefined,
                         undefined,
                         {}
@@ -1005,6 +1009,7 @@ class TestToolServer(unittest.TestCase):
                 node_path,
                 str(runner_path),
                 str(extension_path),
+                str(args_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1021,6 +1026,62 @@ class TestToolServer(unittest.TestCase):
                 stderr.decode("utf-8", errors="replace"),
             )
             return json.loads(stdout.decode("utf-8"))
+
+    def test_generated_bridge_accepts_request_larger_than_default_stream_limit(self):
+        async def _test():
+            server = _ToolServer()
+            await server.start()
+            payload = "large-tool-input:" + "x" * (128 * 1024)
+
+            async def executor(name, args, *, call_id=None):
+                self.assertEqual(name, "exotic")
+                self.assertEqual(args["input"], payload)
+                self.assertEqual(call_id, "call-1")
+                return {"accepted_bytes": len(payload.encode())}
+
+            server._tool_executor = executor
+            try:
+                result = await self._run_generated_bridge_tool(
+                    port=server.port, token=server.token, args={"input": payload}
+                )
+            finally:
+                await server.stop()
+
+            self.assertFalse(result["isError"])
+            self.assertEqual(
+                json.loads(result["content"][0]["text"]),
+                {"accepted_bytes": len(payload.encode())},
+            )
+
+        _run(_test())
+
+    def test_generated_bridge_rejects_oversized_request_without_dispatch_or_payload_logs(self):
+        async def _test():
+            server = _ToolServer()
+            executor = AsyncMock()
+            server._tool_executor = executor
+            with patch("omnigent.inner.pi_executor._TOOL_REQUEST_LIMIT", 1024):
+                await server.start()
+                try:
+                    with self.assertLogs("omnigent.inner.pi_executor", level="WARNING") as logs:
+                        result = await self._run_generated_bridge_tool(
+                            port=server.port,
+                            token=server.token,
+                            args={"input": "private-tool-value" * 128},
+                        )
+                finally:
+                    await server.stop()
+
+            executor.assert_not_awaited()
+            self.assertTrue(result["isError"])
+            self.assertIn("1024-byte limit", json.loads(result["content"][0]["text"])["error"])
+            row = record_to_row(logs.records[-1], source="runner")
+            self.assertEqual(row["event_name"], "pi_tool_request_rejected")
+            self.assertEqual(row["attributes"]["request_limit_bytes"], "1024")
+            self.assertNotIn("private-tool-value", json.dumps(row))
+            self.assertNotIn(server.token, json.dumps(row))
+
+        _run(_test())
 
     def test_start_and_stop(self):
         async def _test():
