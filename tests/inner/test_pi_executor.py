@@ -1,6 +1,7 @@
 """Tests for PiExecutor."""
 
 import asyncio
+import contextlib
 import itertools
 import json
 import logging
@@ -1082,6 +1083,73 @@ class TestToolServer(unittest.TestCase):
             self.assertNotIn(server.token, json.dumps(row))
 
         _run(_test())
+
+    def test_oversized_request_preserves_error_while_client_is_sending(self):
+        async def _test():
+            server = _ToolServer()
+            executor = AsyncMock()
+            server._tool_executor = executor
+            with patch("omnigent.inner.pi_executor._TOOL_REQUEST_LIMIT", 64 * 1024):
+                await server.start()
+                reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
+                try:
+                    writer.write(
+                        json.dumps(
+                            {
+                                "id": "large-request",
+                                "token": server.token,
+                                "tool": "exotic",
+                                "args": {"input": "x" * (8 * 1024 * 1024)},
+                            }
+                        ).encode()
+                        + b"\n"
+                    )
+                    async with asyncio.timeout(5):
+                        await writer.drain()
+                        result = json.loads(await reader.readline())
+                        self.assertEqual(await reader.read(), b"")
+                finally:
+                    writer.close()
+                    with contextlib.suppress(ConnectionError):
+                        await writer.wait_closed()
+                    await server.stop()
+
+            executor.assert_not_awaited()
+            self.assertEqual(result["error"], "tool request exceeds 65536-byte limit")
+
+        _run(_test())
+
+    def test_oversized_request_with_incomplete_sender_is_bounded(self):
+        async def _test(send_eof):
+            server = _ToolServer()
+            executor = AsyncMock()
+            server._tool_executor = executor
+            with (
+                patch("omnigent.inner.pi_executor._TOOL_REQUEST_LIMIT", 64 * 1024),
+                patch("omnigent.inner.pi_executor._TOOL_REQUEST_DRAIN_TIMEOUT_S", 0.05),
+            ):
+                await server.start()
+                reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
+                try:
+                    writer.write(b"x" * (128 * 1024))
+                    await writer.drain()
+                    if send_eof:
+                        writer.write_eof()
+                    async with asyncio.timeout(1):
+                        result = json.loads(await reader.readline())
+                        self.assertEqual(await reader.read(), b"")
+                        while server._clients:
+                            await asyncio.sleep(0.01)
+                    self.assertEqual(result["error"], "tool request exceeds 65536-byte limit")
+                finally:
+                    writer.close()
+                    await writer.wait_closed()
+                    await server.stop()
+            executor.assert_not_awaited()
+
+        for send_eof in (True, False):
+            with self.subTest(sender="truncated" if send_eof else "stalled"):
+                _run(_test(send_eof))
 
     def test_start_and_stop(self):
         async def _test():

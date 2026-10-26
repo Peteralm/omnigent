@@ -120,6 +120,7 @@ _GATEWAY_AUTH_TIMEOUT_S = 7
 _GATEWAY_BRIDGE_TIMEOUT_S = 8
 # Tool arguments can include files; match the other adapters' bounded stream limit.
 _TOOL_REQUEST_LIMIT = 16 * 1024 * 1024
+_TOOL_REQUEST_DRAIN_TIMEOUT_S = 2
 
 
 class _GatewayAuthError(OSError):
@@ -347,6 +348,13 @@ class _ToolServer:
                         + b"\n"
                     )
                     await writer.drain()
+                    writer.write_eof()
+                    # Unread input can reset the socket and discard the error response.
+                    with contextlib.suppress(TimeoutError):
+                        async with asyncio.timeout(_TOOL_REQUEST_DRAIN_TIMEOUT_S):
+                            while chunk := await reader.read(64 * 1024):
+                                if b"\n" in chunk:
+                                    break
                     break
                 if not raw:
                     break
