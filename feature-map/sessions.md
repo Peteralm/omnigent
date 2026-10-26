@@ -68,6 +68,8 @@ the header menu), and each place is a separate entry point.
   host-switch controls stay visible but disabled, with hover and keyboard
   explanations. Their forms cannot submit.
 - `clone`: copy a session into a new workspace, including a typed `~` path.
+  Participating sandbox providers require a [profile selection](sandbox-profiles.md)
+  before submission, including branch clones.
 - `reconnect`: a stopped or stranded session shows a reconnect affordance and a
   dialog with the command to run; the desktop app reconnects a local host
   itself, and starts an Arca host recognized by its saved ID or CLI-seeded name
