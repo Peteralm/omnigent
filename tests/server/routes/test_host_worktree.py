@@ -123,7 +123,7 @@ async def host_setup() -> AsyncIterator[HostRegistry]:
         conn.outbound_queue.put_nowait(None)
         try:
             await asyncio.wait_for(drain_task, timeout=1.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             drain_task.cancel()
 
 
@@ -390,7 +390,7 @@ async def test_create_worktree_outwaits_a_checkout_longer_than_the_short_bound(
         conn.outbound_queue.put_nowait(None)
         try:
             await asyncio.wait_for(drain_task, timeout=1.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             drain_task.cancel()
 
 

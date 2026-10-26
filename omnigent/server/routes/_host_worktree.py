@@ -171,7 +171,7 @@ async def _await_host_worktree_result(
             raise WorktreeHostUnavailableError(
                 f"host '{host_conn.host_id}' connection lost during {op}"
             ) from exc
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise WorktreeHostUnavailableError(
                 f"host '{host_conn.host_id}' did not respond to {op} within "
                 f"{timeout:.0f}s (it may be running an older version "
