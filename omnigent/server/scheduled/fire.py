@@ -1310,6 +1310,7 @@ def _make_managed_sandbox_start(deps: FireDeps) -> ManagedLaunchStart:
                     provider=None,
                     agent_store=deps.agent_store,
                     agent_id=task.agent_id,
+                    sandbox_profiles=getattr(deps.app_state, "sandbox_profiles", None),
                 )
             except Exception as exc:
                 await _fail_running_run(

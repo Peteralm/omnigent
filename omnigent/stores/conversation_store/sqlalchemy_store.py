@@ -4257,6 +4257,26 @@ class SqlAlchemyConversationStore(ConversationStore):
             statuses.append((session_id, decoded))
         return statuses
 
+    def get_runner_host_ids(self, runner_id: str) -> list[str]:
+        """Use at most two index seeks, skipping all sessions sharing the first host."""
+        host = SqlConversationMetadata.host_id
+        statement = (
+            select(host)
+            .where(
+                SqlConversationMetadata.workspace_id == current_workspace_id(),
+                SqlConversationMetadata.runner_id == runner_id,
+                host.is_not(None),
+            )
+            .order_by(host, SqlConversationMetadata.id)
+            .limit(1)
+        )
+        with self._session("resolve_runner_host") as session:
+            first = session.scalar(statement)
+            if first is None:
+                return []
+            second = session.scalar(statement.where(host > first))
+            return [first] if second is None else [first, second]
+
     def list_conversations_by_runner_id(
         self,
         runner_id: str,

@@ -3680,6 +3680,47 @@ def test_runner_session_status_page_uses_runner_index(
     assert "TEMP B-TREE" not in description, description
 
 
+@pytest.mark.parametrize("host_count", [0, 1, 3])
+def test_runner_host_lookup_is_bounded(
+    conversation_store: SqlAlchemyConversationStore, host_count: int
+) -> None:
+    from omnigent.db.db_models import workspace_scope
+
+    hosts = [f"{value:032x}" for value in range(1, host_count + 1)]
+    for host_id in [None, *hosts]:
+        for _ in range(4):
+            conv = conversation_store.create_conversation(runner_id="runner-target")
+            if host_id is not None:
+                conversation_store.set_host_id(conv.id, host_id, "/workspace")
+    other = conversation_store.create_conversation(runner_id="runner-other")
+    conversation_store.set_host_id(other.id, "f" * 32, "/workspace")
+    with workspace_scope(424242):
+        other = conversation_store.create_conversation(runner_id="runner-target")
+        conversation_store.set_host_id(other.id, "e" * 32, "/workspace")
+    queries = []
+
+    def capture(_conn, _cursor, statement, parameters, _context, _executemany):
+        if statement.lstrip().upper().startswith("SELECT"):
+            queries.append((statement, parameters))
+
+    event.listen(conversation_store._engine, "before_cursor_execute", capture)
+    try:
+        assert conversation_store.get_runner_host_ids("runner-target") == hosts[:2]
+    finally:
+        event.remove(conversation_store._engine, "before_cursor_execute", capture)
+    assert len(queries) == (2 if hosts else 1)
+    assert all("LIMIT" in statement for statement, _ in queries)
+    if conversation_store._engine.dialect.name == "sqlite":
+        with conversation_store._engine.connect() as connection:
+            for statement, parameters in queries:
+                plan = str(
+                    connection.exec_driver_sql("EXPLAIN QUERY PLAN " + statement, parameters).all()
+                )
+                assert "ix_conversation_metadata_runner_host" in plan, plan
+                assert "host_id>?" in "".join(plan.split()), plan
+                assert "TEMP B-TREE" not in plan, plan
+
+
 def test_list_conversations_by_runner_id_filters(
     conversation_store: SqlAlchemyConversationStore,
 ) -> None:

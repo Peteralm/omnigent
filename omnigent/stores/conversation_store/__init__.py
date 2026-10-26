@@ -1741,6 +1741,10 @@ class ConversationStore(ABC):
         """
         ...
 
+    def get_runner_host_ids(self, runner_id: str) -> list[str]:
+        """Profile admission: return up to two directly bound hosts to detect ambiguity."""
+        raise NotImplementedError
+
     @abstractmethod
     def list_conversations_by_runner_id(
         self,
