@@ -30,6 +30,7 @@ from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
+from omnigent.harness_accounts import HarnessAccounts, normalize_harness_accounts
 from omnigent.harness_availability import HarnessAvailability, is_harness_availability
 from omnigent.host.harness_startup import HarnessStartup
 from omnigent.inner.native_attachments import (
@@ -74,6 +75,7 @@ CAP_PLUGINS = "plugins"
 CAP_SKILL_CONTENT = "skill_content"
 CAP_MCP_TOOLS = "mcp_tools"
 CAP_REFRESH_HARNESSES = "refresh_harnesses"
+CAP_HARNESS_ACCOUNTS = "harness_accounts"
 CAP_MCP_REGISTRY = "mcp_registry"
 # The host bounds a whole worktree create by ``HostCreateWorktreeFrame.timeout_s``:
 CAP_WORKTREE_CREATE_BUDGET = "worktree_create_budget"
@@ -91,6 +93,7 @@ HOST_CAPABILITIES: list[str] = [
     CAP_HARNESS_STARTUP,
     CAP_REFRESH_HARNESSES,
     CAP_WORKTREE_CREATE_BUDGET,
+    CAP_HARNESS_ACCOUNTS,
 ]
 
 
@@ -167,6 +170,8 @@ class HostFrameKind(str, Enum):
     INSTALL_HARNESS_RESULT = "host.install_harness_result"
     REFRESH_HARNESSES = "host.refresh_harnesses"
     REFRESH_HARNESSES_RESULT = "host.refresh_harnesses_result"
+    PROBE_HARNESS_ACCOUNTS = "host.probe_harness_accounts"
+    PROBE_HARNESS_ACCOUNTS_RESULT = "host.probe_harness_accounts_result"
     STORE_SECRET = "host.store_secret"
     STORE_SECRET_RESULT = "host.store_secret_result"
     DETECT_CREDENTIALS = "host.detect_credentials"
@@ -240,6 +245,7 @@ class HostHelloFrame:
     name: str
     runners: list[str] = field(default_factory=list)
     configured_harnesses: dict[str, HarnessAvailability] | None = None
+    harness_accounts: HarnessAccounts | None = None
     gateway_inference: dict[str, bool] | None = None
     interactive_shells: list[str] | None = None
     telemetry_opt_out: bool = False
@@ -277,6 +283,7 @@ class HostHarnessReadinessFrame:
     """
 
     configured_harnesses: dict[str, HarnessAvailability]
+    harness_accounts: HarnessAccounts | None = None
     gateway_inference: dict[str, bool] | None = None
 
 
@@ -834,6 +841,7 @@ class HostInstallHarnessResultFrame:
     request_id: str
     status: str
     configured_harnesses: dict[str, HarnessAvailability] | None = None
+    harness_accounts: HarnessAccounts | None = None
     version: str | None = None
     gateway_inference: dict[str, bool] | None = None
     error: str | None = None
@@ -853,7 +861,26 @@ class HostRefreshHarnessesResultFrame:
     request_id: str
     status: str
     configured_harnesses: dict[str, HarnessAvailability] | None = None
+    harness_accounts: HarnessAccounts | None = None
     gateway_inference: dict[str, bool] | None = None
+    error: str | None = None
+
+
+@dataclass
+class HostProbeAccountsFrame:
+    """Server → host: probe non-secret harness account metadata."""
+
+    request_id: str
+    refresh_codex: bool = False
+
+
+@dataclass
+class HostProbeAccountsResultFrame:
+    """Host → server: result of an on-demand account probe."""
+
+    request_id: str
+    status: str
+    harness_accounts: HarnessAccounts | None = None
     error: str | None = None
 
 
@@ -928,6 +955,7 @@ class HostStoreSecretResultFrame:
     request_id: str
     status: str
     configured_harnesses: dict[str, HarnessAvailability] | None = None
+    harness_accounts: HarnessAccounts | None = None
     gateway_inference: dict[str, bool] | None = None
     error: str | None = None
 
@@ -1355,6 +1383,8 @@ HostFrame = (
     | HostInstallHarnessResultFrame
     | HostRefreshHarnessesFrame
     | HostRefreshHarnessesResultFrame
+    | HostProbeAccountsFrame
+    | HostProbeAccountsResultFrame
     | HostStoreSecretFrame
     | HostStoreSecretResultFrame
     | HostDetectCredentialsFrame
@@ -1429,6 +1459,7 @@ def encode_host_frame(frame: HostFrame) -> str:
                 "name": frame.name,
                 "runners": list(frame.runners),
                 "configured_harnesses": frame.configured_harnesses,
+                "harness_accounts": frame.harness_accounts,
                 "gateway_inference": frame.gateway_inference,
                 "interactive_shells": frame.interactive_shells,
                 "telemetry_opt_out": frame.telemetry_opt_out,
@@ -1451,6 +1482,7 @@ def encode_host_frame(frame: HostFrame) -> str:
             {
                 "kind": HostFrameKind.HARNESS_READINESS.value,
                 "configured_harnesses": frame.configured_harnesses,
+                "harness_accounts": frame.harness_accounts,
                 "gateway_inference": frame.gateway_inference,
             }
         )
@@ -1666,6 +1698,7 @@ def encode_host_frame(frame: HostFrame) -> str:
                 "request_id": frame.request_id,
                 "status": frame.status,
                 "configured_harnesses": frame.configured_harnesses,
+                "harness_accounts": frame.harness_accounts,
                 "version": frame.version,
                 "gateway_inference": frame.gateway_inference,
                 "error": frame.error,
@@ -1685,7 +1718,26 @@ def encode_host_frame(frame: HostFrame) -> str:
                 "request_id": frame.request_id,
                 "status": frame.status,
                 "configured_harnesses": frame.configured_harnesses,
+                "harness_accounts": frame.harness_accounts,
                 "gateway_inference": frame.gateway_inference,
+                "error": frame.error,
+            }
+        )
+    if isinstance(frame, HostProbeAccountsFrame):
+        return _encode_payload(
+            {
+                "kind": HostFrameKind.PROBE_HARNESS_ACCOUNTS.value,
+                "request_id": frame.request_id,
+                "refresh_codex": frame.refresh_codex,
+            }
+        )
+    if isinstance(frame, HostProbeAccountsResultFrame):
+        return _encode_payload(
+            {
+                "kind": HostFrameKind.PROBE_HARNESS_ACCOUNTS_RESULT.value,
+                "request_id": frame.request_id,
+                "status": frame.status,
+                "harness_accounts": frame.harness_accounts,
                 "error": frame.error,
             }
         )
@@ -1710,6 +1762,7 @@ def encode_host_frame(frame: HostFrame) -> str:
                 "request_id": frame.request_id,
                 "status": frame.status,
                 "configured_harnesses": frame.configured_harnesses,
+                "harness_accounts": frame.harness_accounts,
                 "gateway_inference": frame.gateway_inference,
                 "error": frame.error,
             }
@@ -2233,6 +2286,20 @@ def _decode_known_host_frame(
             return HostRefreshHarnessesFrame(request_id=_required_str(msg, "request_id"))
         case HostFrameKind.REFRESH_HARNESSES_RESULT:
             return _decode_refresh_harnesses_result(msg)
+        case HostFrameKind.PROBE_HARNESS_ACCOUNTS:
+            return HostProbeAccountsFrame(
+                request_id=_required_str(msg, "request_id"),
+                refresh_codex=(
+                    _required_bool(msg, "refresh_codex") if "refresh_codex" in msg else False
+                ),
+            )
+        case HostFrameKind.PROBE_HARNESS_ACCOUNTS_RESULT:
+            return HostProbeAccountsResultFrame(
+                request_id=_required_str(msg, "request_id"),
+                status=_required_str(msg, "status"),
+                harness_accounts=normalize_harness_accounts(msg.get("harness_accounts")),
+                error=_optional_nullable_str(msg, "error"),
+            )
         case HostFrameKind.STORE_SECRET:
             return _decode_store_secret(msg)
         case HostFrameKind.STORE_SECRET_RESULT:
@@ -2336,6 +2403,7 @@ def _decode_host_hello(msg: _JsonObject) -> HostHelloFrame:
         name=_required_str(msg, "name"),
         runners=_optional_str_list(msg, "runners"),
         configured_harnesses=_optional_str_availability_map(msg, "configured_harnesses"),
+        harness_accounts=normalize_harness_accounts(msg.get("harness_accounts")),
         gateway_inference=optional_str_bool_map(msg, "gateway_inference"),
         interactive_shells=(
             _optional_str_list(msg, "interactive_shells")
@@ -2363,6 +2431,7 @@ def _decode_harness_readiness(msg: _JsonObject) -> HostHarnessReadinessFrame:
         raise ValueError("harness readiness frame requires a non-empty configured_harnesses map")
     return HostHarnessReadinessFrame(
         configured_harnesses=configured_harnesses,
+        harness_accounts=normalize_harness_accounts(msg.get("harness_accounts")),
         gateway_inference=optional_str_bool_map(msg, "gateway_inference"),
     )
 
@@ -2725,6 +2794,7 @@ def _decode_install_harness_result(msg: _JsonObject) -> HostInstallHarnessResult
         request_id=_required_str(msg, "request_id"),
         status=_required_str(msg, "status"),
         configured_harnesses=_optional_str_availability_map(msg, "configured_harnesses"),
+        harness_accounts=normalize_harness_accounts(msg.get("harness_accounts")),
         version=_optional_nullable_str(msg, "version"),
         gateway_inference=optional_str_bool_map(msg, "gateway_inference"),
         error=_optional_nullable_str(msg, "error"),
@@ -2737,6 +2807,7 @@ def _decode_refresh_harnesses_result(msg: _JsonObject) -> HostRefreshHarnessesRe
         request_id=_required_str(msg, "request_id"),
         status=_required_str(msg, "status"),
         configured_harnesses=_optional_str_availability_map(msg, "configured_harnesses"),
+        harness_accounts=normalize_harness_accounts(msg.get("harness_accounts")),
         gateway_inference=optional_str_bool_map(msg, "gateway_inference"),
         error=_optional_nullable_str(msg, "error"),
     )
@@ -2770,6 +2841,7 @@ def _decode_store_secret_result(msg: _JsonObject) -> HostStoreSecretResultFrame:
         request_id=_required_str(msg, "request_id"),
         status=_required_str(msg, "status"),
         configured_harnesses=_optional_str_availability_map(msg, "configured_harnesses"),
+        harness_accounts=normalize_harness_accounts(msg.get("harness_accounts")),
         gateway_inference=optional_str_bool_map(msg, "gateway_inference"),
         error=_optional_nullable_str(msg, "error"),
     )
@@ -3198,6 +3270,16 @@ def _required_int(msg: _JsonObject, key: str) -> int:
     val = msg.get(key)
     if not isinstance(val, int) or isinstance(val, bool):
         raise ValueError(f"frame missing required int field: {key!r}")
+    return val
+
+
+def _optional_nullable_int(msg: _JsonObject, key: str) -> int | None:
+    """Return an optional nullable integer field."""
+    val = msg.get(key)
+    if val is None:
+        return None
+    if not isinstance(val, int) or isinstance(val, bool):
+        raise ValueError(f"frame field must be an int or null: {key!r}")
     return val
 
 
