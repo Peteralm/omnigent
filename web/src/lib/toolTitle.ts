@@ -328,6 +328,17 @@ const ARG_LIST_ITEM_MAX_CHARS = 40;
 // Numbers only identify something under id-like keys; a bare `20` from
 // `limit` or `max_results` means nothing in a one-line summary.
 const ID_LIKE_KEY_WORDS = new Set(["id", "number", "num", "pid", "port"]);
+// Arguments that pick which fields or columns come back (`fields: [id, title]`);
+// they shape the result rather than name what the call is about.
+const SELECTOR_KEY_WORDS = new Set([
+  "attributes",
+  "columns",
+  "expand",
+  "fields",
+  "include",
+  "properties",
+  "select",
+]);
 // Words that mark an argument as a credential; matched per word so `author` passes.
 const SECRET_KEY_WORDS = new Set([
   "apikey",
@@ -375,6 +386,8 @@ function argSummaryPart(key: string, value: unknown): string | null {
   }
   if (Array.isArray(value)) {
     if (value.length === 0) return null;
+    const lastWord = identifierWords(key).at(-1);
+    if (lastWord !== undefined && SELECTOR_KEY_WORDS.has(lastWord)) return null;
     const shortStrings =
       value.length <= ARG_LIST_MAX_ITEMS &&
       value.every((item) => typeof item === "string" && item.length <= ARG_LIST_ITEM_MAX_CHARS);

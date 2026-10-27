@@ -20,6 +20,7 @@ shell terminal panel:
     than ``clientWidth``), i.e. wrap instead of forcing a horizontal
     scrollbar;
   - turning word wrap off switches the line to horizontal scrolling;
+  - the Raw toggle shows the Input and Result payload panels;
   - with Settings > Terminal theme pinned to dark under a light app, the
     reloaded panel renders in the dark terminal palette, selection included.
 
@@ -244,6 +245,14 @@ def test_tool_output_long_line_wraps_instead_of_clipping(
     # same line to horizontal scrolling instead of wrapping.
     terminal.get_by_role("button", name="Disable word wrap").click()
     page.wait_for_function(_SCROLLS, timeout=8_000)
+
+    # Raw shows the exact payloads under the same Input and Result names the
+    # Fields view uses.
+    page.get_by_role("button", name="Raw", exact=True).click()
+    expect(page.get_by_text("Input", exact=True)).to_be_visible()
+    expect(page.get_by_text("Result", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Copy input")).to_be_visible()
+    expect(page.get_by_text("Parameters", exact=True)).to_have_count(0)
 
     # The terminal theme setting paints the shell panel too: pin a dark
     # terminal under the light app, then reload the persisted turn.

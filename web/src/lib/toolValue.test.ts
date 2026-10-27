@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   humanizeKey,
+  isProseText,
   isoTimestampMs,
   parseToolOutput,
   pickTitleField,
@@ -146,5 +147,35 @@ describe("isoTimestampMs", () => {
     expect(isoTimestampMs("2026-02-30T10:00:00Z")).toBeNull();
     expect(isoTimestampMs("2026-13-01T10:00:00Z")).toBeNull();
     expect(isoTimestampMs("tomorrow at 9")).toBeNull();
+  });
+});
+
+describe("isProseText", () => {
+  const description =
+    "Follow-up to [#11607](<https://github.com/o/r/pull/11607>).\n\n1. Show counts";
+
+  it("treats a description-like field as prose", () => {
+    expect(isProseText("Line one\nline two", "description")).toBe(true);
+    expect(isProseText("Fix the bug\n\nDetails here", "commitMessage")).toBe(true);
+  });
+
+  it("keeps source, commands and data in the code face", () => {
+    // WHY: a file's content or a script must keep its exact layout, even if it holds `# comments`.
+    expect(isProseText("# Title\n- item", "content")).toBe(false);
+    expect(isProseText("- a\n- b", "new_string")).toBe(false);
+    expect(isProseText("SELECT *\nFROM t", "sql")).toBe(false);
+  });
+
+  it("reads markdown under an unknown field name as prose", () => {
+    expect(isProseText(description, "text")).toBe(true);
+    expect(isProseText("Intro\n\n- first\n- second")).toBe(true);
+    expect(isProseText("See **this** part\nand more")).toBe(true);
+  });
+
+  it("does not read plain text, code or JSON as markdown", () => {
+    expect(isProseText("line one\nline two")).toBe(false);
+    expect(isProseText("function f() {\n  return 1;\n}\n# not a heading")).toBe(false);
+    expect(isProseText('{\n  "a": "[x](y)"\n}')).toBe(false);
+    expect(isProseText("def f():\n    return 1\n    # [x](y)")).toBe(false);
   });
 });

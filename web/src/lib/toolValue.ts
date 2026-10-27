@@ -263,3 +263,61 @@ export function isoTimestampMs(text: string): number | null {
   const ms = Date.parse(text);
   return Number.isFinite(ms) ? ms : null;
 }
+
+// Field names whose text is written for people (an issue description, a commit message).
+const PROSE_KEY_WORDS = new Set([
+  "body",
+  "comment",
+  "description",
+  "details",
+  "instructions",
+  "markdown",
+  "message",
+  "notes",
+  "plan",
+  "prompt",
+  "reason",
+  "summary",
+]);
+// Field names whose text is source, a command or data, which must keep its exact layout.
+const CODE_KEY_WORDS = new Set([
+  "cmd",
+  "code",
+  "command",
+  "content",
+  "contents",
+  "diff",
+  "html",
+  "json",
+  "patch",
+  "pattern",
+  "query",
+  "regex",
+  "script",
+  "source",
+  "sql",
+  "stderr",
+  "stdout",
+  "string",
+  "xml",
+  "yaml",
+]);
+const MARKDOWN_SIGNS = [
+  /\[[^\]\n]+\]\(\S+\)/, // [text](url)
+  /^#{1,6} \S/m, // heading
+  /^ {0,3}(?:[-*+]|\d+\.) \S/m, // list item
+  /\*\*\S[^*\n]*\*\*/, // bold
+];
+
+// Whether a long string reads as prose rather than code or data: the field name
+// decides first, then markdown syntax in text with few code-like lines.
+export function isProseText(text: string, key?: string): boolean {
+  const keyWords = key === undefined ? [] : identifierWords(key);
+  if (keyWords.some((word) => CODE_KEY_WORDS.has(word))) return false;
+  if (keyWords.some((word) => PROSE_KEY_WORDS.has(word))) return true;
+  if (/^\s*[[{<]/.test(text)) return false;
+  const lines = text.split("\n").filter((line) => line.trim().length > 0);
+  const codeLike = lines.filter((line) => /^(?:\t| {4})|[;{}]\s*$/.test(line)).length;
+  if (codeLike * 4 > lines.length) return false;
+  return MARKDOWN_SIGNS.some((sign) => sign.test(text));
+}

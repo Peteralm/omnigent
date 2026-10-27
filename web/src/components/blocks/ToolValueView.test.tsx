@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { absoluteTime } from "@/lib/relativeTime";
@@ -6,7 +7,12 @@ import { ToolValueView } from "./ToolValueView";
 afterEach(cleanup);
 
 function renderValue(value: unknown) {
-  return render(<ToolValueView value={value} />).container;
+  // Markdown links look up workspace files through React Query, as in the app.
+  return render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ToolValueView value={value} />
+    </QueryClientProvider>,
+  ).container;
 }
 
 describe("ToolValueView", () => {
@@ -67,6 +73,39 @@ describe("ToolValueView", () => {
     expect(container.textContent).toContain("ID OMNI-12243");
     expect(container.textContent).toContain("Notes first line second line");
     expect(container.querySelector("pre")).toBeNull();
+  });
+
+  it("renders a long description as markdown in the interface font", async () => {
+    // WHY: an issue description read as a monospace <pre> full of `[#1](<https://...>)` syntax.
+    const description =
+      "Follow-up to [#11607](<https://github.com/omnigent-ai/omnigent/pull/11607>).\n\n1. Show counts";
+    const container = renderValue({ identifier: "OMNI-13632", description });
+    const prose = screen.getByTestId("tool-prose-value");
+    const link = await screen.findByRole("link", { name: "#11607" });
+    expect(prose.contains(link)).toBe(true);
+    expect(link).toHaveAttribute("href", "https://github.com/omnigent-ai/omnigent/pull/11607");
+    expect(prose.textContent).not.toContain("](");
+    expect(prose).not.toHaveClass("font-mono");
+    expect(container.querySelector("pre")).toBeNull();
+  });
+
+  it("keeps file content and other code in the code face", () => {
+    const container = renderValue({ path: "notes.md", content: "# Notes\n- [x](y)\n" });
+    expect(screen.queryByTestId("tool-prose-value")).toBeNull();
+    expect(container.querySelector("pre")).toHaveClass("font-mono");
+    expect(container.querySelector("pre")?.textContent).toBe("# Notes\n- [x](y)\n");
+  });
+
+  it("lets record fields join a parent grid's label column", () => {
+    // WHY: the Input and Result sections share one label column so their values line up.
+    const container = render(<ToolValueView value={{ id: "OMNI-1" }} subgrid />).container;
+    const view = screen.getByTestId("tool-value-view");
+    expect(view).toHaveClass("col-span-2", "grid-cols-subgrid");
+    expect(container.querySelector("dl")).toHaveClass("col-span-2", "grid-cols-subgrid");
+    cleanup();
+    render(<ToolValueView value="plain text" subgrid />);
+    expect(screen.getByTestId("tool-value-view")).toHaveClass("col-span-2");
+    expect(screen.getByTestId("tool-value-view")).not.toHaveClass("grid-cols-subgrid");
   });
 
   it("labels inherited object names as plain words", () => {

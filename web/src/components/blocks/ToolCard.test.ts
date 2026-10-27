@@ -168,9 +168,11 @@ describe("ToolCard rendering", () => {
     showView("Raw");
     expect(raw).toHaveAttribute("aria-selected", "true");
     expect(fields).toHaveAttribute("aria-selected", "false");
-    expect(screen.getByText("Parameters")).toBeInTheDocument();
-    expect(screen.getByText("Output")).toBeInTheDocument();
-    expect(screen.queryByText("Input")).toBeNull();
+    // Raw panels keep the section names from the Fields view.
+    expect(screen.getByText("Input")).toBeInTheDocument();
+    expect(screen.getByText("Result")).toBeInTheDocument();
+    expect(screen.queryByText("Parameters")).toBeNull();
+    expect(screen.queryByText("Output")).toBeNull();
     expect(container.textContent).toContain('"includeComments": false');
     // The switch stays put, so keyboard focus survives switching views.
     expect(screen.getByRole("tab", { name: "Raw" })).toBe(raw);
@@ -178,6 +180,28 @@ describe("ToolCard rendering", () => {
     showView("Fields");
     expect(screen.getByText("Input")).toBeInTheDocument();
     expect(screen.queryByText("Parameters")).toBeNull();
+  });
+
+  it("lays the Input and Result fields out on one shared grid", () => {
+    // WHY: separate grids size their own label columns, so values started at different offsets.
+    const { container } = renderCard({
+      name: "mcp__linear__get_issue",
+      arguments: { id: "OMNI-13632" },
+      output: JSON.stringify({ identifier: "OMNI-13632", assigneeDisplayName: "Pat" }),
+      state: "output-available",
+    });
+    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+    const grid = screen.getByTestId("tool-fields-grid");
+    const [input, result] = screen.getAllByTestId("tool-value-view");
+    for (const view of [input!, result!]) {
+      expect(grid.contains(view)).toBe(true);
+      // Each level between the grid and the field rows passes the columns through.
+      let node: HTMLElement | null = view.querySelector("dl");
+      for (; node !== null && node !== grid; node = node.parentElement) {
+        expect(node.className).toContain("grid-cols-subgrid");
+      }
+      expect(node).toBe(grid);
+    }
   });
 
   it("renders an MCP content-block JSON result as fields", () => {
@@ -253,7 +277,7 @@ describe("ToolCard rendering", () => {
       });
       fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
       expect(screen.queryByTestId("tool-value-view")).toBeNull();
-      expect(screen.getAllByText("Output").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Result").length).toBeGreaterThan(0);
     } finally {
       spy.mockRestore();
     }
@@ -352,7 +376,7 @@ describe("ToolCard rendering", () => {
     fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
     showView("Raw");
 
-    // Both the Parameters and Output panels default to wrapping.
+    // Both the Input and Result panels default to wrapping.
     const pres = Array.from(container.querySelectorAll("pre"));
     expect(pres.length).toBeGreaterThan(1);
     for (const pre of pres) {
@@ -373,7 +397,7 @@ describe("ToolCard rendering", () => {
     showView("Raw");
 
     const toggles = screen.getAllByRole("button", { name: "Disable word wrap" });
-    expect(toggles.length).toBe(2); // Parameters + Output
+    expect(toggles.length).toBe(2); // Input + Result
     fireEvent.click(toggles[0]);
 
     // Only the toggled panel unwraps; the other keeps the default.
@@ -461,8 +485,9 @@ describe("ToolCard shell terminal panel", () => {
     });
     expand(container);
     fireEvent.click(screen.getByRole("button", { name: "Raw" }));
-    expect(screen.getByText("Parameters")).toBeInTheDocument();
-    expect(screen.getByText("Output")).toBeInTheDocument();
+    expect(screen.getByText("Input")).toBeInTheDocument();
+    expect(screen.getByText("Result")).toBeInTheDocument();
+    expect(screen.queryByText("Parameters")).toBeNull();
     expect(container.textContent).toContain("\\u001b[1ma.txt\\u001b[0m");
   });
 
