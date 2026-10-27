@@ -522,7 +522,8 @@ def test_tool_rows_read_as_actions_with_their_outcome(
     assert "mono" not in font.lower()
     # A description's heading stays near body size instead of the chat's 1.4em.
     sizes = description.evaluate(
-        "el => ['h2', 'p'].map(tag => parseFloat(getComputedStyle(el.querySelector(tag)).fontSize))"
+        "el => ['h2', 'p'].map("
+        "tag => parseFloat(getComputedStyle(el.querySelector(tag)).fontSize))"
     )
     assert sizes[0] <= sizes[1] * 1.1, sizes
     raw = page.get_by_role("tab", name="Raw")
