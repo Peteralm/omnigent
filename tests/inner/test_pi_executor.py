@@ -2711,7 +2711,7 @@ class TestRunTurn(unittest.TestCase):
         _run(_test())
 
     def test_tool_error_event(self):
-        async def _test():
+        async def _test(result):
             executor = self._make_executor()
 
             fake_rpc = _PiRpcSession()
@@ -2729,7 +2729,7 @@ class TestRunTurn(unittest.TestCase):
                         "toolCallId": "pi_add",
                         "toolName": "fail_tool",
                         "isError": True,
-                        "result": "Something broke",
+                        "result": result,
                     }
                 ),
                 json.dumps({"type": "agent_end", "messages": []}),
@@ -2755,8 +2755,15 @@ class TestRunTurn(unittest.TestCase):
             self.assertEqual(len(tool_completes), 1)
             self.assertEqual(tool_completes[0].status, ToolCallStatus.ERROR)
             self.assertIn("Something broke", tool_completes[0].error)
+            # The transcript keeps no error flag, so the mirrored text says it failed.
+            self.assertEqual(tool_completes[0].result, "Error: Something broke")
 
-        _run(_test())
+        for result in (
+            "Something broke",
+            {"content": [{"type": "text", "text": "Something broke"}]},
+        ):
+            with self.subTest(result=result):
+                _run(_test(result))
 
     def test_message_end_with_error_stop_reason(self):
         async def _test():

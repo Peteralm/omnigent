@@ -132,6 +132,7 @@ def test_edit_rows_show_line_counts_and_diff(
     page.get_by_role("button", name="Send", exact=True).click()
     expect(page.locator(_ASSISTANT, has_text=_REPLY).first).to_be_visible(timeout=90_000)
     assert (workspace / "greet.py").read_text() == _GREETING.replace(_OLD_LINES, _NEW_LINES)
+    assert (workspace / "settings.py").read_text() == "DEBUG = False\n"
 
     worked = page.get_by_test_id("turn-worked-fold")
     expect(worked).to_be_visible(timeout=30_000)
@@ -152,7 +153,9 @@ def test_edit_rows_show_line_counts_and_diff(
     )
     failed = page.locator('[data-slot="collapsible-trigger"]', has_text="settings.py").first
     failed_result = failed.get_by_test_id("tool-result-line")
-    expect(failed_result).to_be_visible()
+    expect(failed_result).to_contain_text(
+        re.compile(r"Could not find oldText in '.*settings\.py'")
+    )
     expect(failed_result).not_to_contain_text("Updated")
     color = "el => getComputedStyle(el).color"
     assert failed_result.evaluate(color) != applied_result.evaluate(color)

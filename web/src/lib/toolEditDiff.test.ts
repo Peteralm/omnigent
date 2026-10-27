@@ -78,6 +78,16 @@ describe("getFileEditDiff", () => {
     expect(batch).toMatchObject({ text: "@@\n-x\n+y\n@@\n end\n+", additions: 2, removals: 1 });
   });
 
+  it("shows a change too large to compare line by line as a whole-block replacement", () => {
+    const shared = Array.from({ length: 500 }, (_, index) => `line ${index}`);
+    const diff = getFileEditDiff("Edit", {
+      old_string: [...shared, "old end"].join("\n"),
+      new_string: ["new start", ...shared].join("\n"),
+    });
+    // 501 × 501 lines exceeds the comparison budget, so no shared line is matched.
+    expect(diff).toMatchObject({ additions: 501, removals: 501 });
+  });
+
   it("returns null for a no-op, malformed, or non-edit call", () => {
     expect(getFileEditDiff("Edit", { old_string: "same", new_string: "same" })).toBeNull();
     expect(getFileEditDiff("Edit", { file_path: "a.py" })).toBeNull();

@@ -301,7 +301,7 @@ function GenericToolBody({ call, duration, view: toolView }: ToolCardBodyProps) 
         {ViewBody !== undefined ? (
           <>
             <ViewBody call={call} duration={duration} />
-            {/* A view renders the output; a running, cancelled or failed call has none. */}
+            {/* Views render the output; without one, show the pending, cancelled or failed state. */}
             {output === null && hasResult && result}
           </>
         ) : (

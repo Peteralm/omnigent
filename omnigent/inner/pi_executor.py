@@ -1448,6 +1448,28 @@ class PiSubprocessConfig:
     extra_args: list[str]
 
 
+_ERROR_LEAD_RE = re.compile(r"^error\s*:", re.IGNORECASE)
+
+
+def _failed_tool_output(result: JsonValue) -> str:
+    """Return a failed Pi tool result's text, led by ``Error:``.
+
+    The transcript does not carry Pi's error flag, so the text must say the call failed.
+    """
+    content = result.get("content") if isinstance(result, dict) else result
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        text = "".join(
+            item["text"]
+            for item in content
+            if isinstance(item, dict) and isinstance(item.get("text"), str)
+        )
+    else:
+        text = json.dumps(result)
+    return text if _ERROR_LEAD_RE.match(text) else f"Error: {text}"
+
+
 def _extract_text(msg: Message) -> str:
     """
     Extract text content from a message dict.
@@ -3095,6 +3117,8 @@ class PiExecutor(Executor):
                 else:
                     status = ToolCallStatus.SUCCESS
 
+                if is_error and not is_blocked and result is not None:
+                    result = _failed_tool_output(result)
                 yield ToolCallComplete(
                     name=tool_name,
                     status=status,

@@ -483,20 +483,26 @@ describe("ToolCard registered views", () => {
     },
   );
 
-  it("shows a failed edit's unrecognized output as its error above the diff", async () => {
-    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
-    registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
-    const { container } = renderCard({
-      name: "Edit",
-      arguments: { file_path: "/repo/a.py", old_string: "x", new_string: "y" },
-      output: "Permission denied: /repo/a.py",
-      state: "output-error",
-    });
-    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
-    const errorBox = container.querySelector("div.text-destructive.border");
-    expect(errorBox?.textContent).toBe("Permission denied: /repo/a.py");
-    expect(container.textContent).toContain("+y");
-  });
+  it.each([
+    ["Permission denied: /repo/a.py", "Permission denied: /repo/a.py"],
+    ["  ", "The edit failed with no output."],
+  ])(
+    "shows a failed edit's unrecognized output %j as its error above the diff",
+    async (output, shown) => {
+      const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
+      registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+      const { container } = renderCard({
+        name: "Edit",
+        arguments: { file_path: "/repo/a.py", old_string: "x", new_string: "y" },
+        output,
+        state: "output-error",
+      });
+      fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+      const errorBox = container.querySelector("div.text-destructive.border");
+      expect(errorBox?.textContent).toBe(shown);
+      expect(container.textContent).toContain("+y");
+    },
+  );
 
   it.each([
     ["input-available", "Waiting for output"],
@@ -531,19 +537,25 @@ describe("ToolCard registered views", () => {
     expect(container.textContent).toContain("M src/app.py");
   });
 
-  it("does not call a running edit's still-empty arguments a missing diff", async () => {
-    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
-    registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
-    const { container } = renderCard({
-      name: "Edit",
-      arguments: { file_path: "/repo/a.py" },
-      output: null,
-      state: "input-available",
-    });
-    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
-    expect(screen.queryByText("No diff recorded for this edit.")).toBeNull();
-    expect(screen.getByText("Waiting for output")).toBeInTheDocument();
-  });
+  it.each([
+    ["input-available", "Waiting for output"],
+    ["cancelled", "Tool was cancelled before output arrived."],
+  ] as const)(
+    "does not call a %s edit's incomplete arguments a missing diff",
+    async (state, shown) => {
+      const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
+      registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+      const { container } = renderCard({
+        name: "Edit",
+        arguments: { file_path: "/repo/a.py" },
+        output: null,
+        state,
+      });
+      fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+      expect(screen.queryByText("No diff recorded for this edit.")).toBeNull();
+      expect(screen.getByText(shown)).toBeInTheDocument();
+    },
+  );
 
   it("falls back to the generic parts a view leaves out", () => {
     registeredViews.set("fake_plan", { summary: () => null });

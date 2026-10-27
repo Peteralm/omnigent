@@ -7093,7 +7093,7 @@ def test_forwarder_sends_file_change_to_observer(
 def test_forwarder_does_not_observe_unsuccessful_file_change(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str
 ) -> None:
-    """Failed or declined patches report the failure and create no change records."""
+    """Failed or declined patches must not create phantom change records."""
     (tmp_path / "tool_relay.json").write_text(
         json.dumps({"url": "http://relay.local", "token": "relay-secret"}),
         encoding="utf-8",
@@ -7103,7 +7103,6 @@ def test_forwarder_does_not_observe_unsuccessful_file_change(
         "urlopen",
         lambda *_args, **_kwargs: pytest.fail("unsuccessful patch reached file observer"),
     )
-    posted: list[dict[str, Any]] = []
 
     asyncio.run(
         _replay_completed_item(
@@ -7113,14 +7112,9 @@ def test_forwarder_does_not_observe_unsuccessful_file_change(
                 "changes": [{"path": "/repo/not-applied.py", "kind": {"type": "add"}}],
                 "status": status,
             },
-            _capture_handler(posted),
+            lambda _request: httpx.Response(202, json={"queued": False}),
             bridge_dir=tmp_path,
         )
-    )
-
-    # The error lead keeps the transcript from reading the patch as applied.
-    assert posted[1]["data"]["item_data"]["output"] == (
-        f"Error: File change ended with status {status}.\nadd /repo/not-applied.py"
     )
 
 

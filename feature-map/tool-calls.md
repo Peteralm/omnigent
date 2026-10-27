@@ -44,7 +44,7 @@ Preconditions: build this checkout's web UI and install its Playwright Chromium.
 ## Gotchas
 
 - Harnesses name the same kind of tool differently: Claude `Read`/`Bash`/`mcp__server__tool`, Codex `shell`/`apply_patch`, Pi and OpenCode lowercase `read`/`bash`, and SDK harnesses `server__tool` for spec-declared MCP servers. Codex does not mirror MCP calls into the transcript.
-- No tool-level error flag reaches the web. The destructive result line comes from the output text, so a tool that reports failure in another shape reads as a success.
+- No tool-level error flag reaches the web. The destructive result line comes from the output text, so a tool that reports failure in another shape reads as a success. Pi (SDK and native) puts `Error:` before a failed tool's text for this reason.
 - A settled turn hides rows behind Worked and the summary line; open both before looking for a row.
 - Results too long to show in full skip the field view on purpose; check Expand there instead.
 - Edit diffs come from the call's arguments, not the file: they show no surrounding context unless the arguments carry it (a Codex update diff does), and a Claude `replace_all` edit counts one match, so its line reads "at least". An edit that only adds or removes a final newline shows it as one added or removed blank line. A Codex rename shows the destination in the diff's `+++` header; a rename with no content change shows no line. Imported Codex sessions whose `apply_patch` arguments are raw patch text show no counts, and so do Codex patches whose output lacks the leading `File change applied.` line (sessions recorded before it was added), because their output does not say whether the patch applied.

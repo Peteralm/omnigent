@@ -19,6 +19,8 @@ describe("summarizeToolResult", () => {
     it("stays quiet on success; the terminal panel already shows the output", () => {
       expect(summarize("Bash", "README.md", { command: "ls" })).toBeNull();
       expect(summarize("shell", "ok\n[exit code: 0]", { command: "make" })).toBeNull();
+      // "[error] <message>" is an edit tool's failure form, not a shell's.
+      expect(summarize("Bash", "[error] recovered cache entry", { command: "cat log" })).toBeNull();
     });
 
     it("reports a failing exit code with the output's last line", () => {
@@ -216,16 +218,6 @@ describe("summarizeFileEdit", () => {
       expect(summarizeFileEdit(legacy)).toBeNull();
     },
   );
-
-  it("does not read a successful shell's [error] output as a failure", () => {
-    const bash: ToolCall = {
-      name: "Bash",
-      args: { command: "printf '[error] recovered cache entry'" },
-      output: "[error] recovered cache entry",
-      state: "output-available",
-    };
-    expect(summarizeToolResult(bash)?.isError).not.toBe(true);
-  });
 
   it("marks a replace-all edit's counts as a lower bound", () => {
     const replaceAll = edit("ok", {

@@ -8,15 +8,17 @@ import { editErrorMessage } from "@/lib/toolValue";
 import { CodePanel } from "./ToolCodePanel";
 import { ToolValueView } from "./ToolValueView";
 
+const EMPTY_FAILURE = "The edit failed with no output.";
+
 export function FileEditBody({ call }: { call: ToolCall }) {
   const { name, args, output, state } = call;
-  // Arguments may still be streaming in; the card shows the pending state below.
-  const running = output === null && state === "input-available";
+  // With no output yet, the card shows the pending or cancelled state below instead.
+  const awaitingOutput = output === null;
   const diff = useMemo(() => getFileEditDiff(name, args), [name, args]);
   const error = useMemo(() => {
     if (output === null) return null;
     // A failed call's output is its error even without a recognized prefix.
-    const failure = state === "output-error" && output.trim() !== "" ? output.trim() : null;
+    const failure = state === "output-error" ? output.trim() || EMPTY_FAILURE : null;
     return editErrorMessage(output) ?? failure;
   }, [output, state]);
   return (
@@ -28,7 +30,7 @@ export function FileEditBody({ call }: { call: ToolCall }) {
       )}
       {diff === null ? (
         <>
-          {!running && (
+          {!awaitingOutput && (
             <p className="text-muted-foreground text-sm">No diff recorded for this edit.</p>
           )}
           {Object.keys(args).length > 0 && <ToolValueView value={args} />}
