@@ -339,6 +339,26 @@ describe("SessionUpdatesProvider project folders", () => {
     expect(folder!.pages[0].data[0]!.pending_elicitations_count).toBe(1);
   });
 
+  it("keeps streamed archived rows in archived folder caches and drops them from live caches", () => {
+    const client = new QueryClient();
+    const row = { ...conv("conv_filed"), archived: true };
+    const liveKey = ["project-sessions", "Sprint 42"];
+    const archivedKey = ["project-sessions", "Sprint 42", "archived"];
+    for (const key of [liveKey, archivedKey]) {
+      client.setQueryData(key, {
+        pages: [{ data: [row], has_more: false }],
+        pageParams: [undefined],
+      });
+    }
+    renderProvider(client, ["/"]);
+    act(() => frameHandler()({ type: "changed", items: [{ ...row, title: "Renamed archive" }] }));
+
+    expect(
+      client.getQueryData<ConversationsInfiniteData>(archivedKey)!.pages[0].data[0]?.title,
+    ).toBe("Renamed archive");
+    expect(client.getQueryData<ConversationsInfiniteData>(liveKey)!.pages[0].data).toEqual([]);
+  });
+
   it("evicts a removed session from a project folder's cache", () => {
     const client = new QueryClient();
     seedProjectFolder(client, "Sprint 42", ["conv_filed", "conv_other"]);

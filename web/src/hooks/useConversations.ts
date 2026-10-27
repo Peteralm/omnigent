@@ -41,7 +41,7 @@ import {
   overlayTitleIntoCaches,
   PIN_WRITE_MUTATION_KEY,
   PINNED_LABEL_KEY,
-  PROJECT_FOLDER_FILTERS,
+  filtersFromProjectQueryKey,
   PROJECT_LABEL_KEY,
   recentlyCreatedSessions,
   removeIdsFromPages,
@@ -2357,8 +2357,8 @@ export function useMoveToProject() {
     const itemsById = new Map<string, SessionListWireItem>([
       [id, { id, project_id: projectId, labels }],
     ]);
-    // Each sort has its own loaded window; the inactive sort may hold different rows.
-    const windowSorts = new Set<SessionSortBy>();
+    // Sort and archive slices have independent loaded windows.
+    const windowScopes = new Set<string>();
     for (const [key, data] of queryClient.getQueriesData<ConversationsInfiniteData>({
       queryKey: ["conversations"],
     })) {
@@ -2368,27 +2368,37 @@ export function useMoveToProject() {
         filtersFromConversationQueryKey(key),
         undefined,
       );
-      if (found.has(id)) windowSorts.add(key[5] === "created_at" ? "created_at" : "updated_at");
+      if (found.has(id) && next?.pages.some((page) => page.data.some((c) => c.id === id))) {
+        windowScopes.add(
+          `${key[5] === "created_at" ? "created_at" : "updated_at"}:${row.archived === true}`,
+        );
+      }
       if (next !== data) queryClient.setQueryData(key, next);
     }
     // Target folder cache: overlay the row's fields if already present, and
     // insert a deep row (outside the flat window) into the first page.
-    const visibleSorts = new Set(windowSorts);
+    const visibleScopes = new Set(windowScopes);
     if (targetProjectName !== null) {
       for (const [targetKey, targetData] of queryClient.getQueriesData<ConversationsInfiniteData>({
         queryKey: ["project-sessions", targetProjectName],
       })) {
         if (!targetData) continue;
-        const sortBy = targetKey[2] === "created_at" ? "created_at" : "updated_at";
+        const sortBy = targetKey.slice(2).includes("created_at") ? "created_at" : "updated_at";
+        const filters = filtersFromProjectQueryKey(targetKey);
+        const scope = `${sortBy}:${filters.includeArchived}`;
         const { data: merged, found } = mergeItemsIntoPages(
           targetData,
           itemsById,
-          PROJECT_FOLDER_FILTERS,
+          filters,
           undefined,
         );
+        if (filters.includeArchived !== (row.archived === true)) {
+          if (merged !== targetData) queryClient.setQueryData(targetKey, merged);
+          continue;
+        }
         let next = merged ?? targetData;
         const [first, ...rest] = next.pages;
-        if (!found.has(id) && !windowSorts.has(sortBy) && first) {
+        if (!found.has(id) && !windowScopes.has(scope) && first) {
           next = {
             ...next,
             pages: [
@@ -2398,14 +2408,15 @@ export function useMoveToProject() {
           };
         }
         if (next !== targetData) queryClient.setQueryData(targetKey, next);
-        if (found.has(id) || first !== undefined) visibleSorts.add(sortBy);
+        if (found.has(id) || first !== undefined) visibleScopes.add(scope);
       }
     }
     for (const [key, data] of queryClient.getQueriesData<ConversationsInfiniteData>({
       queryKey: ["project-sessions"],
     })) {
-      const sortBy = key[2] === "created_at" ? "created_at" : "updated_at";
-      if (key[1] === targetProjectName || !visibleSorts.has(sortBy)) continue;
+      const sortBy = key.slice(2).includes("created_at") ? "created_at" : "updated_at";
+      const scope = `${sortBy}:${filtersFromProjectQueryKey(key).includeArchived}`;
+      if (key[1] === targetProjectName || !visibleScopes.has(scope)) continue;
       const { data: next, removed } = removeIdsFromPages(data, new Set([id]));
       if (removed) queryClient.setQueryData(key, next);
     }
@@ -2563,6 +2574,7 @@ async function fetchProjectSessionsPage(
     visibility: archived ? "archived" : "mine",
     project,
   });
+  // Preserve archive inclusion on older servers that ignore visibility.
   if (archived) params.set("include_archived", "true");
   if (after) params.set("after", after);
   const res = await authenticatedFetch(`/v1/sessions?${params.toString()}`);

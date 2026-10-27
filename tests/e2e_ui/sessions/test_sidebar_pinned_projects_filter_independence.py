@@ -168,7 +168,7 @@ def test_pinned_section_ignores_the_session_filter(
 
 
 @pytest.mark.flaky(reruns=2, reruns_delay=5)
-def test_projects_section_ignores_the_session_filter(
+def test_project_folders_follow_archived_filter(
     browser: Browser,
     multi_user_server: MultiUserServer,
 ) -> None:
@@ -205,6 +205,7 @@ def test_projects_section_ignores_the_session_filter(
         project_button = page.get_by_role("button", name=project, exact=True)
         if project_button.get_attribute("aria-expanded") != "true":
             project_button.click()
+        expect(project_button).to_have_attribute("aria-expanded", "true")
         folder = page.get_by_role("button", name=project, exact=True).locator(
             "xpath=ancestor::section[1]"
         )

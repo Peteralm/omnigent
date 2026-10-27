@@ -10,6 +10,7 @@ import {
   mergeItemsIntoPages,
   nullsToUndefined,
   overlayArchivedIntoCaches,
+  overlayTitleIntoCaches,
   removeIdsFromPages,
 } from "./sessionListCache";
 
@@ -442,6 +443,29 @@ describe("collectConversationIds", () => {
     // query) contributes nothing rather than throwing.
     expect(new Set(ids)).toEqual(new Set(["a", "b", "c"]));
     expect(ids.length).toBe(3);
+  });
+});
+
+describe("project-folder cache membership", () => {
+  it.each([
+    ["project-sessions", "proj", "archived"],
+    ["project-sessions", "proj", "created_at", "archived"],
+  ])("retains a renamed archive in %j and evicts it from live folders", (...archivedKey) => {
+    const qc = new QueryClient();
+    const row = conv("a", { archived: true });
+    qc.setQueryData(archivedKey, data([row]));
+    const liveKey = ["project-sessions", "proj"];
+    qc.setQueryData(liveKey, data([row]));
+
+    overlayTitleIntoCaches(qc, "a", "Renamed");
+
+    expect(qc.getQueryData<ConversationsInfiniteData>(archivedKey)!.pages[0].data).toEqual([
+      { ...row, title: "Renamed" },
+    ]);
+    expect(qc.getQueryData<ConversationsInfiniteData>(liveKey)!.pages[0].data).toEqual([]);
+
+    overlayArchivedIntoCaches(qc, "a", false);
+    expect(qc.getQueryData<ConversationsInfiniteData>(archivedKey)!.pages[0].data).toEqual([]);
   });
 });
 

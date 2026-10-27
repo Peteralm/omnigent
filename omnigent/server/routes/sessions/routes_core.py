@@ -1801,7 +1801,9 @@ def register_core_routes(
         :param visibility: Ownership/archive filter for the sidebar tabs.
             ``"mine"`` returns only sessions the caller owns (owner-level
             grant). ``"shared"`` returns only sessions accessible but not
-            owned. ``"archived"`` returns only archived sessions.
+            owned. ``"archived"`` returns only archived sessions; with
+            ``project``, only owned sessions are returned so first-class
+            project names resolve within the caller's projects.
             ``"all"`` (default) returns all accessible non-archived
             sessions, matching the legacy behaviour.
         :returns: A :class:`PaginatedList` of
@@ -1830,7 +1832,8 @@ def register_core_routes(
         #   like-named project stays out of the viewer's own folder.
         # mine/shared require an identity anchor (owned_by / accessible_by).
         # Passing None into the store's shared_only path raises ValueError.
-        # "archived" carries no ownership semantics — preserve it in no-auth.
+        # "archived" is owner-scoped with a project (name resolution needs owned_by);
+        # without a project it includes accessible archives. Preserve it in no-auth.
         effective_visibility = visibility
         if user_id is None and visibility in ("mine", "shared"):
             effective_visibility = "all"

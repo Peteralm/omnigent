@@ -457,12 +457,15 @@ export function collectConversationIds(datas: (ConversationsInfiniteData | undef
   return [...ids];
 }
 
-/**
- * Filters for a project-folder list (`["project-sessions", name]`) — those
- * lists are non-archived and unsearched, the same dimensions the push-delta
- * merge uses when overlaying rows into them.
- */
-export const PROJECT_FOLDER_FILTERS = { searchQuery: "", includeArchived: false } as const;
+/** Decode the archive slice of an unsearched project-folder query. */
+export function filtersFromProjectQueryKey(key: readonly unknown[]): ConversationListFilters {
+  const archived = key.slice(2).includes("archived");
+  return {
+    searchQuery: "",
+    includeArchived: archived,
+    visibility: archived ? "archived" : "mine",
+  };
+}
 
 /**
  * Overlay a title into every cache that holds a row for one session.
@@ -513,7 +516,12 @@ export function overlayTitleIntoCaches(
   for (const [key, data] of queryClient.getQueriesData<ConversationsInfiniteData>({
     queryKey: ["project-sessions"],
   })) {
-    const { data: next } = mergeItemsIntoPages(data, itemsById, PROJECT_FOLDER_FILTERS, undefined);
+    const { data: next } = mergeItemsIntoPages(
+      data,
+      itemsById,
+      filtersFromProjectQueryKey(key),
+      undefined,
+    );
     if (next !== data) queryClient.setQueryData(key, next);
   }
   queryClient.setQueryData<Conversation | null>(["conversation-backfill", id], (old) =>
@@ -561,7 +569,12 @@ export function overlayArchivedIntoCaches(
   for (const [key, data] of queryClient.getQueriesData<ConversationsInfiniteData>({
     queryKey: ["project-sessions"],
   })) {
-    const { data: next } = mergeItemsIntoPages(data, itemsById, PROJECT_FOLDER_FILTERS, undefined);
+    const { data: next } = mergeItemsIntoPages(
+      data,
+      itemsById,
+      filtersFromProjectQueryKey(key),
+      undefined,
+    );
     if (next !== data) queryClient.setQueryData(key, next);
   }
   queryClient.setQueryData<Conversation | null>(["conversation-backfill", id], (old) =>

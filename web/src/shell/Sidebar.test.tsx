@@ -4115,7 +4115,13 @@ describe("sidebar_grouping_ui release flag", () => {
       expect(within(sessions).getByText("archived_unfiled")).toBeInTheDocument();
       expect(within(sessions).queryByText("archived_filed")).toBeNull();
       fireEvent.click(screen.getByRole("button", { name: "Empty" }));
-      expect(screen.getByText(/No sessions. Start a/)).toBeInTheDocument();
+      expect(screen.getByText("No archived sessions")).toBeInTheDocument();
+      expect(
+        within(screen.getByRole("button", { name: "Empty" }).closest("section")!).queryByRole(
+          "link",
+          { name: "new session" },
+        ),
+      ).toBeNull();
 
       projectSessionsMock.current.Alpha = [live];
       selectSessionFilter("mine");

@@ -1517,7 +1517,7 @@ function ProjectFolder({
     const byId = new Map<string, Conversation>();
     for (const c of query.data?.pages.flatMap((page) => page.data) ?? []) byId.set(c.id, c);
     for (const c of windowConversations) byId.set(c.id, c);
-    // Pinned sessions live in the global Pinned section, not their folder.
+    // Pins take precedence over live folders.
     return sortConversations(
       [...byId.values()].filter(
         (c) =>
@@ -1633,7 +1633,9 @@ function ProjectFolder({
         onToggleSelected={onToggleSelected}
         onProjectAssigned={onProjectAssigned}
         emptyMessage={
-          loadingFirstPage ? undefined : (
+          loadingFirstPage ? undefined : archived ? (
+            "No archived sessions"
+          ) : (
             <span className="block">
               No sessions. Start a{" "}
               <Link
@@ -1966,10 +1968,10 @@ function ConversationList({
     const pinned = orderByPinnedTimestamp(notArchived.filter((c) => pinnedSet.has(c.id)));
     const pinnedIdSet = new Set(pinned.map((c) => c.id));
 
-    // Folders keep live members on All / My / Shared, and archived members on
-    // Archived. Filing is owner-only; pins take precedence over live folders.
-    // Grouped views drop the folders: filed sessions join the groups instead.
-    const projectScoped = activeTab === "archived" ? tabScoped : notArchived;
+    // Folders use live members on All / My / Shared and archives on Archived.
+    // Filing is owner-only so legacy label collisions cannot file shared rows.
+    // Pins precede live folders; grouped views omit folders.
+    const folderCandidates = activeTab === "archived" ? tabScoped : notArchived;
     const filedIds = new Set<string>();
     const projectGroups: {
       id: string | null;
@@ -1980,7 +1982,7 @@ function ConversationList({
       // Dual-read membership: a session belongs to this folder if it has
       // the first-class id OR the legacy omni_project label of this name,
       // and (filing being owner-only) the viewer owns it.
-      const inProject = projectScoped.filter(
+      const inProject = folderCandidates.filter(
         (c) => sessionBelongsToProject(c, { id, name }, viewerId) && !pinnedIdSet.has(c.id),
       );
       inProject.forEach((c) => filedIds.add(c.id));
