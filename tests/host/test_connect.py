@@ -3761,7 +3761,7 @@ def test_host_subprocess_op_guard_is_reentrant_and_balanced(tmp_path: Path) -> N
 
 @pytest.mark.parametrize(
     ("frame_timeout_s", "expected_timeout_s"),
-    [(1234.0, 1234.0), (None, 120.0)],
+    [(1234.0, 1234.0), (None, 140.0)],
     ids=["server-budget", "legacy-server"],
 )
 async def test_handle_create_worktree_uses_server_budget_or_legacy_bound(
@@ -3793,14 +3793,22 @@ async def test_handle_create_worktree_uses_server_budget_or_legacy_bound(
     assert CAP_WORKTREE_CREATE_BUDGET in HOST_CAPABILITIES
 
 
-async def test_handle_create_worktree_replies_on_filesystem_error(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("raised", "expected_detail"),
+    [
+        (PermissionError(13, "Permission denied", "/repo-worktrees"), "Permission denied"),
+        (ValueError("embedded null byte"), "ValueError"),
+    ],
+    ids=["filesystem-error", "unexpected-error"],
+)
+async def test_handle_create_worktree_replies_when_create_raises(
+    monkeypatch: pytest.MonkeyPatch, raised: Exception, expected_detail: str
 ) -> None:
-    """A filesystem error fails the request at once instead of leaving the server waiting."""
+    """A failed create answers at once instead of leaving the server waiting out its bound."""
     host = _make_host_process()
 
     def _fail_create_worktree(**kwargs: object) -> CreatedWorktree:
-        raise PermissionError(13, "Permission denied", "/repo-worktrees")
+        raise raised
 
     monkeypatch.setattr("omnigent.host.connect.create_worktree", _fail_create_worktree)
 
@@ -3812,7 +3820,7 @@ async def test_handle_create_worktree_replies_on_filesystem_error(
     assert result.request_id == "r1"
     assert result.status == "failed"
     assert result.error is not None
-    assert "Permission denied" in result.error
+    assert expected_detail in result.error
 
 
 def test_reap_orphans_is_noop_without_wnohang(

@@ -125,8 +125,10 @@ def _run_git(
         return subprocess.run(
             ["git", *args],
             cwd=cwd,
-            # Keep failure diagnostics stable for repository classification.
-            env={**os.environ, "LC_ALL": "C"},
+            # Keep failure diagnostics stable for repository classification, and
+            # fail a credential prompt at once instead of holding the create budget.
+            env={**os.environ, "LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0"},
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=bound,

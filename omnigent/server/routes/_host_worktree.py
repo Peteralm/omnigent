@@ -137,6 +137,7 @@ async def _await_host_worktree_result(
     frame: str,
     op: str,
     timeout: float,
+    older_host_hint: bool = True,
 ) -> dict[str, object]:
     """
     Send a worktree frame and await its matching result over the tunnel.
@@ -154,6 +155,8 @@ async def _await_host_worktree_result(
     :param op: Short label for error messages, e.g.
         ``"worktree creation"``.
     :param timeout: Seconds to wait for the host's reply.
+    :param older_host_hint: Suggest an outdated host on timeout. ``False``
+        when the host already advertised support for this request.
     :returns: The host's result dict (``status`` plus op-specific
         fields).
     :raises WorktreeHostUnavailableError: On connection loss or no
@@ -172,10 +175,13 @@ async def _await_host_worktree_result(
                 f"host '{host_conn.host_id}' connection lost during {op}"
             ) from exc
         except TimeoutError as exc:
+            hint = (
+                " (it may be running an older version that does not support worktrees)"
+                if older_host_hint
+                else ""
+            )
             raise WorktreeHostUnavailableError(
-                f"host '{host_conn.host_id}' did not respond to {op} within "
-                f"{timeout:.0f}s (it may be running an older version "
-                "that does not support worktrees)"
+                f"host '{host_conn.host_id}' did not respond to {op} within {timeout:.0f}s{hint}"
             ) from exc
     finally:
         pending.pop(request_id, None)
@@ -224,10 +230,7 @@ async def create_worktree_on_host(
         )
     )
     # Older hosts ignore timeout_s, and some never answer a create at all.
-    if CAP_WORKTREE_CREATE_BUDGET in host_conn.hello.capabilities:
-        timeout = _WORKTREE_CREATE_TIMEOUT_S
-    else:
-        timeout = _WORKTREE_TIMEOUT_S
+    budgeted_host = CAP_WORKTREE_CREATE_BUDGET in host_conn.hello.capabilities
     result = await _await_host_worktree_result(
         host_registry=host_registry,
         host_conn=host_conn,
@@ -235,7 +238,8 @@ async def create_worktree_on_host(
         request_id=request_id,
         frame=frame,
         op="worktree creation",
-        timeout=timeout,
+        timeout=_WORKTREE_CREATE_TIMEOUT_S if budgeted_host else _WORKTREE_TIMEOUT_S,
+        older_host_hint=not budgeted_host,
     )
     if result.get("status") != "ok":
         raise WorktreeProxyError(

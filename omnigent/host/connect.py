@@ -219,8 +219,8 @@ if TYPE_CHECKING:
 # Workspaces whose fs reader (and change registry) stay warm between requests.
 _FS_READER_CACHE_SIZE = 8
 
-# Older servers omit a create's timeout_s and wait 150 s for its reply.
-_LEGACY_SERVER_CREATE_BUDGET_S = 120.0
+# Older servers omit a create's timeout_s and wait 150 s for its reply; finish inside that.
+_LEGACY_SERVER_CREATE_BUDGET_S = 140.0
 
 _logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
@@ -3953,6 +3953,14 @@ class HostProcess:
                 request_id=frame.request_id,
                 status="failed",
                 error=f"host filesystem error: {exc}",
+            )
+        except Exception as exc:
+            # Any other crash must still answer, or the server waits out its whole bound.
+            _logger.exception("Worktree creation crashed for %s", frame.repo_path)
+            return HostCreateWorktreeResultFrame(
+                request_id=frame.request_id,
+                status="failed",
+                error=f"worktree creation crashed on the host ({type(exc).__name__})",
             )
         _logger.info(
             "Created worktree %s (branch %s) from %s",

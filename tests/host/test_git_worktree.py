@@ -574,6 +574,9 @@ def test_list_worktrees_preserves_probe_failure(
     suffix = f": {stderr}" if stderr else ""
     assert exc.value.message == f"git worktree list failed (exit 128){suffix}"
     assert run.call_args.kwargs["env"]["LC_ALL"] == "C"
+    # Git must never wait on a credential prompt the server cannot show.
+    assert run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert run.call_args.kwargs["stdin"] is subprocess.DEVNULL
 
 
 @pytest.mark.parametrize(

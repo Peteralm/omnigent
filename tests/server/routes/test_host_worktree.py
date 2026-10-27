@@ -284,23 +284,31 @@ async def test_create_worktree_connection_lost_raises_unavailable(
     assert isinstance(exc.value, WorktreeProxyError)
 
 
+@pytest.mark.parametrize(
+    ("capabilities", "expects_older_host_hint"),
+    [(None, True), ([CAP_WORKTREE_CREATE_BUDGET], False)],
+    ids=["legacy-host", "budgeted-host"],
+)
 async def test_create_worktree_timeout_raises_unavailable(
     monkeypatch: pytest.MonkeyPatch,
+    capabilities: list[str] | None,
+    expects_older_host_hint: bool,
 ) -> None:
     """No host reply within the timeout raises WorktreeHostUnavailableError.
 
     Uses a host with no auto-replier so the pending future never
-    resolves; a tiny patched timeout keeps the test fast. A host that
-    does not advertise the create budget keeps the short bound.
+    resolves; tiny patched timeouts keep the test fast. Only a host that
+    does not advertise the create budget is told it may be outdated.
     """
     import omnigent.server.routes._host_worktree as hw_mod
 
     monkeypatch.setattr(hw_mod, "_WORKTREE_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(hw_mod, "_WORKTREE_CREATE_TIMEOUT_S", 0.05)
     registry = HostRegistry()
     registry.register(
         host_id="host_silent",
         ws=_FakeWebSocket(),  # type: ignore[arg-type] — duck-typed
-        hello=_hello_frame(),
+        hello=_hello_frame(capabilities),
         owner=None,
     )
     conn = registry.get("host_silent")
@@ -315,6 +323,7 @@ async def test_create_worktree_timeout_raises_unavailable(
             base_branch=None,
         )
     assert "did not respond" in exc.value.message
+    assert ("older version" in exc.value.message) is expects_older_host_hint
 
 
 async def test_create_worktree_outwaits_a_checkout_longer_than_the_short_bound(
