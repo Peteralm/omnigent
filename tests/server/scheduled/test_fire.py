@@ -113,6 +113,7 @@ class FakeScheduledTaskStore:
     def __init__(self, rows: dict[str, ScheduledTask] | None = None) -> None:
         self._rows = rows or {}
         self.updates: list[dict[str, Any]] = []
+        self.clear_calls: list[tuple[str, str, bool]] = []
         self.runs: list[dict[str, Any]] = []
         self.get_workspace_ids: list[int] = []
         self.update_workspace_ids: list[int] = []
@@ -129,10 +130,11 @@ class FakeScheduledTaskStore:
 
     def clear_project_id(self, scheduled_task_id: str, project_id: str) -> bool:
         row = self._rows.get(scheduled_task_id)
-        if row is None or row.project_id != project_id:
-            return False
-        self.updates.append({"id": scheduled_task_id, "project_id": None})
-        return True
+        cleared = row is not None and row.project_id == project_id
+        self.clear_calls.append((scheduled_task_id, project_id, cleared))
+        if cleared:
+            self.updates.append({"id": scheduled_task_id, "project_id": None})
+        return cleared
 
     def create_run(
         self, run_id: str, scheduled_task_id: str, status: str, scheduled_at: int, **kwargs: Any
@@ -612,13 +614,18 @@ async def test_fire_keeps_a_project_the_task_moved_to_mid_fire() -> None:
     async def _launch(conv: Any, task: Any) -> None:
         return None
 
+    conv_store = FakeConversationStore()
     on_fire = build_on_fire(
-        _deps(store, project_store=FakeProjectStore(set())), launch_dispatch=_launch
+        _deps(store, conversation_store=conv_store, project_store=FakeProjectStore(set())),
+        launch_dispatch=_launch,
     )
     await on_fire(0, "task_1")
     await _drain()
 
+    # The clear was tried for the stale project and refused, so proj_2 stays.
+    assert store.clear_calls == [("task_1", "proj_1", False)]
     assert not [u for u in store.updates if "project_id" in u]
+    assert conv_store.created[0]["project_id"] is None
 
 
 @pytest.mark.asyncio

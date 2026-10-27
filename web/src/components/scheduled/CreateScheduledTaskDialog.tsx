@@ -224,6 +224,9 @@ export function CreateScheduledTaskDialog({
   const [sandboxMode, setSandboxMode] = useState(false);
   // Project by name: null = unchanged; "" = no project.
   const [projectChoice, setProjectChoice] = useState<string | null>(null);
+  // Id of the existing project picked, captured at pick time so a later rename
+  // can't redirect the save; null for a newly typed name.
+  const [pickedProjectId, setPickedProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scheduleUnsupported, setScheduleUnsupported] = useState(false);
 
@@ -251,6 +254,7 @@ export function CreateScheduledTaskDialog({
         setWorkspace(editingTask.workspace ?? "");
         setSandboxMode(editingTask.executionTarget === "managed_sandbox");
         setProjectChoice(null);
+        setPickedProjectId(null);
       } else {
         setName(initialName ?? "");
         setPrompt(initialPrompt ?? "");
@@ -264,6 +268,7 @@ export function CreateScheduledTaskDialog({
         setWorkspace("");
         setSandboxMode(false);
         setProjectChoice(null);
+        setPickedProjectId(null);
       }
       setError(null);
     }
@@ -331,6 +336,7 @@ export function CreateScheduledTaskDialog({
     setWorkspaceBrowserOpen(false);
     setSandboxMode(false);
     setProjectChoice(null);
+    setPickedProjectId(null);
     setError(null);
     setScheduleUnsupported(false);
   }
@@ -364,12 +370,7 @@ export function CreateScheduledTaskDialog({
           ? { workspace: workspace.trim() }
           : {}),
       };
-      const projectInput = await projectChangeInput(
-        projectChoice,
-        savedProjectId,
-        savedProjectName,
-        projects,
-      );
+      const projectInput = await projectChangeInput(projectChoice, pickedProjectId, savedProjectId);
       if (editingTask) {
         // Thread model/effort ONLY when the agent supports them. Each control's
         // "" (Default) maps to `null` so an update CLEARS a previously-set
@@ -595,13 +596,22 @@ export function CreateScheduledTaskDialog({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="min-w-56">
                   {savedProjectDeleted && (
-                    <DropdownMenuItem className="px-2 py-1" onSelect={() => setProjectChoice("")}>
+                    <DropdownMenuItem
+                      className="px-2 py-1"
+                      onSelect={() => {
+                        setProjectChoice("");
+                        setPickedProjectId(null);
+                      }}
+                    >
                       No project
                     </DropdownMenuItem>
                   )}
                   <ProjectPicker
                     currentProject={projectName || null}
-                    onSelect={(next) => setProjectChoice(next)}
+                    onSelect={(next) => {
+                      setProjectChoice(next);
+                      setPickedProjectId(projects.find((p) => p.name === next)?.id ?? null);
+                    }}
                   />
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -741,19 +751,19 @@ export function CreateScheduledTaskDialog({
 }
 
 /**
- * The project field to send for a pick, and nothing when it is unchanged. A
- * typed name is created (or found) first, as moving a session does.
+ * The project field to send for a pick, and nothing when it is unchanged. An
+ * existing project is sent by the id captured when it was picked; a typed name
+ * is created (or found) first, as moving a session does.
  */
 async function projectChangeInput(
   choice: string | null,
+  pickedId: string | null,
   savedProjectId: string | null,
-  savedProjectName: string | undefined,
-  projects: { id: string | null; name: string }[],
 ): Promise<{ projectId?: string | null }> {
-  if (choice === null || choice === savedProjectName) return {};
+  if (choice === null) return {};
   if (choice === "") return savedProjectId !== null ? { projectId: null } : {};
-  const pickedId = projects.find((p) => p.name === choice)?.id ?? null;
-  return { projectId: pickedId ?? (await resolveOrCreateProjectId(choice)) };
+  if (pickedId !== null) return pickedId === savedProjectId ? {} : { projectId: pickedId };
+  return { projectId: await resolveOrCreateProjectId(choice) };
 }
 
 /** Sentinel Select value for "no pinned host" — Radix Select disallows "". */

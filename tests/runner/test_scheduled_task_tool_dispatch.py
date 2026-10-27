@@ -229,9 +229,10 @@ async def test_project_name_is_sent_as_the_resolved_project_id(
     [
         ({"project_name": "a", "project_id": "p"}, 200, "not both"),
         ({"project_name": "   "}, 200, "must not be empty"),
+        ({"project_name": None}, 200, "must be a string"),
         ({"project_name": "a"}, 500, "could not create project"),
     ],
-    ids=["both-fields", "blank-name", "create-fails"],
+    ids=["both-fields", "blank-name", "null-name", "create-fails"],
 )
 async def test_project_name_errors_never_reach_the_task_route(
     args: dict[str, object], create_status: int, error: str

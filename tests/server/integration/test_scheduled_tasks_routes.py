@@ -651,6 +651,11 @@ async def test_create_files_runs_into_an_owned_project(
     )
     assert created.status_code == 200, created.text
     assert created.json()["project_id"] == mine
+    # Stored by id, so renaming the project keeps the task filed in it.
+    renamed = await auth_client.patch(
+        f"/v1/projects/{mine}", json={"name": "renamed"}, headers=_headers()
+    )
+    assert renamed.status_code == 200, renamed.text
     got = await auth_client.get(f"/v1/scheduled-tasks/{created.json()['id']}", headers=_headers())
     assert got.json()["project_id"] == mine
 
@@ -683,24 +688,6 @@ async def test_update_moves_and_clears_the_task_project(
     cleared = await auth_client.patch(task_url, json={"project_id": None}, headers=_headers())
     assert cleared.status_code == 200, cleared.text
     assert cleared.json()["project_id"] is None
-
-
-async def test_task_project_follows_a_rename(auth_client: httpx.AsyncClient, db_uri: str) -> None:
-    """A task stores its project by id, so renaming the project keeps it filed."""
-    _make_user(db_uri)
-    project_id = await _make_project(auth_client, "before")
-    created = (
-        await auth_client.post(
-            "/v1/scheduled-tasks", json=_create_body(project_id=project_id), headers=_headers()
-        )
-    ).json()
-    renamed = await auth_client.patch(
-        f"/v1/projects/{project_id}", json={"name": "after"}, headers=_headers()
-    )
-    assert renamed.status_code == 200, renamed.text
-
-    got = await auth_client.get(f"/v1/scheduled-tasks/{created['id']}", headers=_headers())
-    assert got.json()["project_id"] == project_id
 
 
 async def test_single_user_task_projects_are_the_projects_api_projects(

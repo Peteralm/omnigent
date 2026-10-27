@@ -1008,6 +1008,29 @@ describe("CreateScheduledTaskDialog project", () => {
     expect(await submitCreate()).toMatchObject({ projectId: "proj_1" });
   });
 
+  it("keeps the picked project when it is renamed before saving", async () => {
+    const view = renderWithProjects();
+    fillRequired();
+    openProjectMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Triage" }));
+    // Another tab renames the project; the list refresh drops the old name.
+    projectsQuery.current = {
+      data: [{ id: "proj_1", name: "Bugs", icon: null }, PROJECTS[1]],
+      isPending: false,
+      isSuccess: true,
+      isError: false,
+    };
+    view.rerender(
+      <CapabilitiesProvider
+        info={{ ...SERVER_INFO_OFFLINE_FALLBACK, scheduled_task_projects: true }}
+      >
+        <CreateScheduledTaskDialog open onOpenChange={vi.fn()} />
+      </CapabilitiesProvider>,
+    );
+    expect(await submitCreate()).toMatchObject({ projectId: "proj_1" });
+    expect(resolveOrCreateProjectId).not.toHaveBeenCalled();
+  });
+
   it("creates a project from a typed name", async () => {
     renderWithProjects();
     fillRequired();
