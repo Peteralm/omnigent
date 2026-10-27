@@ -85,7 +85,6 @@ async def test_create_posts_payload() -> None:
                 "agent_id": "ag_1",
                 "workspace": "/repo",
                 "host_id": "host_1",
-                "project_name": "triage",
                 "base_branch": "main",
                 "unexpected": "dropped",
             }
@@ -101,7 +100,6 @@ async def test_create_posts_payload() -> None:
         "agent_id": "ag_1",
         "workspace": "/repo",
         "host_id": "host_1",
-        "project_name": "triage",
     }  # unknown fields filtered out
     assert json.loads(out)["id"] == "t1"
 
@@ -161,6 +159,89 @@ async def test_update_forwards_agent_switch_cost_cap_and_project() -> None:
     )
     _, _, body = client.calls[0]
     assert body == {"agent_id": "ag_pi", "max_cost_usd": 2.5, "project_id": None}
+
+
+class _ProjectsClient(_RecordingClient):
+    """Serves ``/v1/projects`` from a list; other calls get the scripted response."""
+
+    def __init__(self, projects: list[dict[str, str]], *, create_status: int = 200) -> None:
+        super().__init__()
+        self.projects = projects
+        self.create_status = create_status
+
+    async def get(self, url: str, *, timeout: object = None) -> _Resp:
+        if url != "/v1/projects":
+            return await super().get(url, timeout=timeout)
+        self.calls.append(("GET", url, None))
+        return _Resp(body={"data": list(self.projects)})
+
+    async def post(self, url: str, *, json: dict | None = None, timeout: object = None) -> _Resp:
+        if url != "/v1/projects":
+            return await super().post(url, json=json, timeout=timeout)
+        self.calls.append(("POST", url, json))
+        if self.create_status == 409:
+            # Another request created the same name first.
+            self.projects.append({"id": "proj_racer", "name": json["name"]})
+            return _Resp(status_code=409, body={"detail": "name taken"})
+        if self.create_status >= 400:
+            return _Resp(status_code=self.create_status, body={"detail": "boom"})
+        self.projects.append({"id": "proj_new", "name": json["name"]})
+        return _Resp(body={"id": "proj_new", "name": json["name"]})
+
+
+_EXISTING = [{"id": "proj_other", "name": "Triage"}, {"id": "proj_triage", "name": "triage"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_name", "projects", "create_status", "filed_into", "created"),
+    [
+        ("sys_scheduled_task_create", _EXISTING, 200, "proj_triage", False),
+        ("sys_scheduled_task_create", [], 200, "proj_new", True),
+        ("sys_scheduled_task_update", [], 409, "proj_racer", True),
+    ],
+    ids=["reuses-exact-name", "creates-missing", "reuses-race-winner"],
+)
+async def test_project_name_is_sent_as_the_resolved_project_id(
+    tool_name: str,
+    projects: list[dict[str, str]],
+    create_status: int,
+    filed_into: str,
+    created: bool,
+) -> None:
+    client = _ProjectsClient(list(projects), create_status=create_status)
+    args: dict[str, object] = {"project_name": "  triage "}
+    if tool_name == "sys_scheduled_task_update":
+        args["scheduled_task_id"] = _TASK_ID
+    await _execute_scheduled_task_tool(tool_name, json.dumps(args), server_client=client)
+
+    creates = [body for verb, url, body in client.calls if (verb, url) == ("POST", "/v1/projects")]
+    assert creates == ([{"name": "triage"}] if created else [])
+    _, url, body = client.calls[-1]
+    assert url.startswith("/v1/scheduled-tasks")
+    assert body is not None and body["project_id"] == filed_into
+    assert "project_name" not in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("args", "create_status", "error"),
+    [
+        ({"project_name": "a", "project_id": "p"}, 200, "not both"),
+        ({"project_name": "   "}, 200, "must not be empty"),
+        ({"project_name": "a"}, 500, "could not create project"),
+    ],
+    ids=["both-fields", "blank-name", "create-fails"],
+)
+async def test_project_name_errors_never_reach_the_task_route(
+    args: dict[str, object], create_status: int, error: str
+) -> None:
+    client = _ProjectsClient([], create_status=create_status)
+    out = await _execute_scheduled_task_tool(
+        "sys_scheduled_task_create", json.dumps(args), server_client=client
+    )
+    assert error in json.loads(out)["error"]
+    assert not [url for _, url, _ in client.calls if url.startswith("/v1/scheduled-tasks")]
 
 
 @pytest.mark.parametrize("project_id", ["0123456789abcdef0123456789abcdef", None])

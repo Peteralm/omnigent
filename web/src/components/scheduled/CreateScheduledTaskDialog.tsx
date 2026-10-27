@@ -33,7 +33,7 @@ import { ModelEffortFields } from "@/components/scheduled/ModelEffortFields";
 import { WorkspacePickerDialog } from "@/shell/WorkspacePickerDialog";
 import { AgentHarnessPicker } from "@/shell/NewChatDialog";
 import { ProjectPicker, ProjectRowIcon } from "@/shell/ProjectPicker";
-import { useProjects } from "@/hooks/useConversations";
+import { resolveOrCreateProjectId, useProjects } from "@/hooks/useConversations";
 import { useAvailableAgents, type AvailableAgent } from "@/hooks/useAvailableAgents";
 import { useHosts } from "@/hooks/useHosts";
 import { useServerInfo } from "@/lib/CapabilitiesContext";
@@ -364,7 +364,7 @@ export function CreateScheduledTaskDialog({
           ? { workspace: workspace.trim() }
           : {}),
       };
-      const projectInput = projectChangeInput(
+      const projectInput = await projectChangeInput(
         projectChoice,
         savedProjectId,
         savedProjectName,
@@ -741,19 +741,19 @@ export function CreateScheduledTaskDialog({
 }
 
 /**
- * The project fields to send for a pick: an existing project by id, a newly
- * typed name by name, and nothing when the choice is unchanged.
+ * The project field to send for a pick, and nothing when it is unchanged. A
+ * typed name is created (or found) first, as moving a session does.
  */
-function projectChangeInput(
+async function projectChangeInput(
   choice: string | null,
   savedProjectId: string | null,
   savedProjectName: string | undefined,
   projects: { id: string | null; name: string }[],
-): { projectId?: string | null; projectName?: string } {
+): Promise<{ projectId?: string | null }> {
   if (choice === null || choice === savedProjectName) return {};
   if (choice === "") return savedProjectId !== null ? { projectId: null } : {};
   const pickedId = projects.find((p) => p.name === choice)?.id ?? null;
-  return pickedId !== null ? { projectId: pickedId } : { projectName: choice };
+  return { projectId: pickedId ?? (await resolveOrCreateProjectId(choice)) };
 }
 
 /** Sentinel Select value for "no pinned host" — Radix Select disallows "". */

@@ -47,8 +47,10 @@ const PROJECTS = [
 const projectsQuery = vi.hoisted(() => ({
   current: { data: undefined as unknown, isPending: false, isSuccess: false, isError: false },
 }));
+const resolveOrCreateProjectId = vi.hoisted(() => vi.fn());
 vi.mock("@/hooks/useConversations", () => ({
   useProjects: () => projectsQuery.current,
+  resolveOrCreateProjectId,
 }));
 vi.mock("@/shell/WorkspacePicker", () => ({
   isNavigablePath: (path: string) => path.startsWith("/"),
@@ -160,6 +162,7 @@ beforeEach(() => {
   projectsQuery.current = { data: PROJECTS, isPending: false, isSuccess: true, isError: false };
   mutateAsync.mockReset().mockResolvedValue({ id: "st_new" });
   updateMutateAsync.mockReset().mockResolvedValue({ id: "st_1" });
+  resolveOrCreateProjectId.mockReset();
   vi.mocked(agentsHook.useAvailableAgents).mockReturnValue({
     data: AGENTS,
   } as unknown as ReturnType<typeof agentsHook.useAvailableAgents>);
@@ -992,8 +995,8 @@ describe("CreateScheduledTaskDialog project", () => {
     fillRequired();
     expect(screen.getByTestId("task-project-trigger")).toHaveTextContent("No project");
     const arg = await submitCreate();
-    expect(arg).not.toHaveProperty("projectName");
     expect(arg).not.toHaveProperty("projectId");
+    expect(resolveOrCreateProjectId).not.toHaveBeenCalled();
   });
 
   it("files runs into an existing project picked from the menu", async () => {
@@ -1013,7 +1016,9 @@ describe("CreateScheduledTaskDialog project", () => {
       target: { value: "Nightly reports" },
     });
     fireEvent.click(await screen.findByRole("menuitem", { name: /Create\s+Nightly reports/ }));
-    expect(await submitCreate()).toMatchObject({ projectName: "Nightly reports" });
+    resolveOrCreateProjectId.mockResolvedValueOnce("proj_new");
+    expect(await submitCreate()).toMatchObject({ projectId: "proj_new" });
+    expect(resolveOrCreateProjectId).toHaveBeenCalledWith("Nightly reports");
   });
 
   function renderEditingFiledTask() {
@@ -1033,7 +1038,6 @@ describe("CreateScheduledTaskDialog project", () => {
     await waitFor(() => expect(updateMutateAsync).toHaveBeenCalledTimes(1));
     const { input } = updateMutateAsync.mock.calls[0][0];
     expect(input).not.toHaveProperty("projectId");
-    expect(input).not.toHaveProperty("projectName");
   });
 
   it("labels a deleted saved project and lets the edit unfile the task", async () => {

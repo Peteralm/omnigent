@@ -17,11 +17,11 @@ import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Query, Request
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from omnigent.db.account_authority import account_generation, current_account_user
 from omnigent.entities import Agent, ScheduledTask, ScheduledTaskRun
@@ -37,10 +37,8 @@ from omnigent.server.routes._session_create_validation import (
     validate_session_model_metadata,
     validate_session_permission_mode,
 )
-from omnigent.server.routes.sessions import announce_projects_changed
 from omnigent.server.scheduled.rrule import RRuleSearchError, RRuleValidationError, validate_rrule
 from omnigent.server.scheduled.run_reconciler import force_fail_stale_runs
-from omnigent.server.schemas import validate_project_name
 from omnigent.stores import AgentStore, ConversationStore, PermissionStore
 from omnigent.stores.artifact_store import ArtifactStore
 from omnigent.stores.project_store import ProjectStore
@@ -55,8 +53,6 @@ _VALID_EXECUTION_TARGETS = frozenset({"connected_host", "managed_sandbox"})
 _MANAGED_SANDBOX_WITH_HOST_MSG = (
     "a managed_sandbox task runs in a fresh sandbox each fire; do not set host_id or workspace"
 )
-_PROJECT_ID_AND_NAME_MSG = "set project_id or project_name, not both"
-_ProjectName = Annotated[str, AfterValidator(validate_project_name)]
 
 
 class CreateScheduledTaskRequest(BaseModel):
@@ -87,14 +83,11 @@ class CreateScheduledTaskRequest(BaseModel):
     # ``managed_sandbox`` runs the task in a fresh server-provisioned sandbox
     # (no host_id/workspace); default keeps the connected-host behavior.
     execution_target: str = "connected_host"
-    # File fired sessions into a project by id, or by name (get-or-create).
+    # One of the caller's projects to file fired sessions into.
     project_id: str | None = Field(default=None, min_length=1)
-    project_name: _ProjectName | None = None
 
     @model_validator(mode="after")
     def _validate_create(self) -> CreateScheduledTaskRequest:
-        if self.project_id is not None and self.project_name is not None:
-            raise ValueError(_PROJECT_ID_AND_NAME_MSG)
         if self.execution_target not in _VALID_EXECUTION_TARGETS:
             raise ValueError("execution_target must be 'connected_host' or 'managed_sandbox'")
         if self.execution_target == "managed_sandbox" and (
@@ -126,15 +119,10 @@ class UpdateScheduledTaskRequest(BaseModel):
     execution_target: str | None = Field(default=None, min_length=1)
     state: str | None = None
     project_id: str | None = Field(default=None, min_length=1)  # null unfiles future runs
-    project_name: _ProjectName | None = None
 
     @model_validator(mode="after")
     def _validate_patch(self) -> UpdateScheduledTaskRequest:
         """Keep the public update surface to active/paused connected-host runs."""
-        if "project_name" in self.model_fields_set and self.project_name is None:
-            raise ValueError("project_name cannot be null; set project_id to null to unfile")
-        if self.project_name is not None and "project_id" in self.model_fields_set:
-            raise ValueError(_PROJECT_ID_AND_NAME_MSG)
         if self.state is not None and self.state not in {"active", "paused"}:
             raise ValueError("state must be 'active' or 'paused'; use DELETE to delete a task")
         if "workspace" in self.model_fields_set and self.workspace is None:
@@ -265,8 +253,8 @@ def create_scheduled_tasks_router(
 
     :param store: The shared :class:`ScheduledTaskStore`.
     :param artifact_store: Holds the copy a task gets of another user's agent.
-    :param project_store: Resolves the project fired sessions are filed into.
-        ``None`` rejects tasks that name a project.
+    :param project_store: Checks the project fired sessions are filed into.
+        ``None`` rejects tasks that set a project.
     :param auth_provider: Auth provider used to identify the requesting user.
         ``None`` disables auth (owner resolves to ``"local"``).
     :returns: A configured :class:`APIRouter`.
@@ -376,36 +364,15 @@ def create_scheduled_tasks_router(
         # Match /v1/projects owner scoping ("local" in single-user mode).
         return None if auth_provider is None else owner
 
-    async def _resolve_project(
-        project_owner: str | None,
-        *,
-        project_id: str | None,
-        project_name: str | None,
-    ) -> str:
-        """Resolve a task's project to an id, creating a named one that is missing.
-
-        A created project is kept even if the task write then fails: another
-        request may already be using it, and a retry reuses it by name.
-        """
+    async def _owned_project_id(project_owner: str | None, project_id: str) -> str:
+        """Return *project_id* if it is one of the owner's projects, else a 404."""
         if project_store is None:
             raise OmnigentError(
                 "projects are not available on this server", code=ErrorCode.NOT_FOUND
             )
-        if project_id is not None:
-            project = await asyncio.to_thread(project_store.get, project_id, user_id=project_owner)
-            if project is None:
-                raise OmnigentError("Project not found", code=ErrorCode.NOT_FOUND)
-            return project.id
-        if project_name is None:
-            raise OmnigentError(
-                "project_id or project_name is required",
-                code=ErrorCode.INVALID_INPUT,
-            )
-        project, created = await asyncio.to_thread(
-            project_store.get_or_create_by_name, uuid.uuid4().hex, project_name, project_owner
-        )
-        if created:
-            announce_projects_changed(project_owner)
+        project = await asyncio.to_thread(project_store.get, project_id, user_id=project_owner)
+        if project is None:
+            raise OmnigentError("Project not found", code=ErrorCode.NOT_FOUND)
         return project.id
 
     async def _bind_agent(agent: Agent, owner_id: str | None) -> Agent:
@@ -461,11 +428,8 @@ def create_scheduled_tasks_router(
         bound = await _bind_agent(agent, owner_id)
         project_id: str | None = None
         try:
-            # Resolved after validation so an invalid create makes no project.
-            if body.project_id is not None or body.project_name is not None:
-                project_id = await _resolve_project(
-                    project_owner, project_id=body.project_id, project_name=body.project_name
-                )
+            if body.project_id is not None:
+                project_id = await _owned_project_id(project_owner, body.project_id)
             task = store.create(
                 scheduled_task_id=uuid.uuid4().hex,
                 name=body.name,
@@ -664,7 +628,6 @@ def create_scheduled_tasks_router(
         if body.timezone is not None:
             _validate_timezone_or_400(body.timezone)
         fields = body.model_dump(exclude_unset=True)
-        project_name = fields.pop("project_name", None)
         target_agent_id = fields.get("agent_id") or existing.agent_id
         agent_changed = target_agent_id != existing.agent_id
         new_copy: Agent | None = None
@@ -751,11 +714,8 @@ def create_scheduled_tasks_router(
                 new_copy = bound if bound.id != agent.id else None
         project_owner = _project_owner(owner)
         try:
-            # Resolved after validation so an invalid update makes no project.
-            if project_name is not None or fields.get("project_id") is not None:
-                fields["project_id"] = await _resolve_project(
-                    project_owner, project_id=fields.get("project_id"), project_name=project_name
-                )
+            if fields.get("project_id") is not None:
+                fields["project_id"] = await _owned_project_id(project_owner, fields["project_id"])
             updated = store.update(scheduled_task_id, **fields)
             if updated is None:
                 raise OmnigentError("Scheduled task not found", code=ErrorCode.NOT_FOUND)

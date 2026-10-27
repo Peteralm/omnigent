@@ -115,11 +115,6 @@ export interface CreateScheduledTaskInput {
   executionTarget?: ScheduledTaskExecutionTarget;
   /** File every fired session into this existing project. */
   projectId?: string | null;
-  /**
-   * File every fired session into the caller's project with this name, created
-   * if missing. Do not combine with `projectId`.
-   */
-  projectName?: string;
 }
 
 /**
@@ -152,8 +147,6 @@ export interface UpdateScheduledTaskInput {
   state?: ScheduledTaskState;
   /** File future fired sessions into this existing project; `null` unfiles them. */
   projectId?: string | null;
-  /** File future fired sessions into the project with this name, created if missing. */
-  projectName?: string;
 }
 
 /** Wire shape of a task row (snake_case), matching `_to_response`. */
@@ -314,7 +307,6 @@ export async function createScheduledTask(input: CreateScheduledTaskInput): Prom
   if (input.hostId != null) body.host_id = input.hostId;
   if (input.executionTarget !== undefined) body.execution_target = input.executionTarget;
   if (input.projectId != null) body.project_id = input.projectId;
-  if (input.projectName !== undefined) body.project_name = input.projectName;
   const res = await authenticatedFetch("/v1/scheduled-tasks", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -346,7 +338,6 @@ export async function updateScheduledTask(
   if (input.executionTarget !== undefined) body.execution_target = input.executionTarget;
   if (input.state !== undefined) body.state = input.state;
   if (input.projectId !== undefined) body.project_id = input.projectId;
-  if (input.projectName !== undefined) body.project_name = input.projectName;
   const res = await authenticatedFetch(`/v1/scheduled-tasks/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },

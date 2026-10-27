@@ -5341,21 +5341,6 @@ class SessionProjectSummary(BaseModel):
     icon: str | None = None
 
 
-def validate_project_name(value: str) -> str:
-    """Trim and bound a project name.
-
-    :param value: The raw name, e.g. ``"  nightly triage "``.
-    :returns: The trimmed name.
-    :raises ValueError: If empty/whitespace-only or over 100 characters.
-    """
-    trimmed = value.strip()
-    if not trimmed:
-        raise ValueError("name must not be empty")
-    if len(trimmed) > 100:
-        raise ValueError("name must be at most 100 characters")
-    return trimmed
-
-
 class CreateProjectRequest(BaseModel):
     """
     Request body for ``POST /v1/projects``.
@@ -5380,7 +5365,12 @@ class CreateProjectRequest(BaseModel):
         :returns: The trimmed name.
         :raises ValueError: If empty/whitespace-only or over 100 chars.
         """
-        return validate_project_name(value)
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("name must not be empty")
+        if len(trimmed) > 100:
+            raise ValueError("name must be at most 100 characters")
+        return trimmed
 
 
 class UpdateProjectRequest(BaseModel):
@@ -5411,4 +5401,9 @@ class UpdateProjectRequest(BaseModel):
         """
         if value is None:
             return None
-        return validate_project_name(value)
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("name must not be empty")
+        if len(trimmed) > 100:
+            raise ValueError("name must be at most 100 characters")
+        return trimmed

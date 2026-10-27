@@ -165,16 +165,14 @@ describe("createScheduledTask", () => {
     expect(body.workspace).toBe("/home/me/repo");
   });
 
-  it("sends a project by id or name and omits a null project id", async () => {
+  it("sends a project id and omits a null one", async () => {
     fetchMock.mockResolvedValue(mockResponse(TASK_WIRE));
     const base = { name: "n", prompt: "p", rrule: "FREQ=DAILY", agentId: "ag_1" };
     await createScheduledTask({ ...base, projectId: "proj_1" });
-    await createScheduledTask({ ...base, projectName: "Nightly" });
     await createScheduledTask({ ...base, projectId: null });
     const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body));
     expect(bodies[0].project_id).toBe("proj_1");
-    expect(bodies[1].project_name).toBe("Nightly");
-    expect(bodies[2]).not.toHaveProperty("project_id");
+    expect(bodies[1]).not.toHaveProperty("project_id");
   });
 });
 

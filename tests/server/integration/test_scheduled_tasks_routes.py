@@ -617,139 +617,83 @@ async def test_existing_sandbox_pin_checks_ownership_first(
     assert response.status_code == 403, response.text
 
 
-async def test_create_files_runs_into_a_project_by_name(
+async def _make_project(
+    client: httpx.AsyncClient, name: str, owner: str = "alice@example.com"
+) -> str:
+    resp = await client.post("/v1/projects", json={"name": name}, headers=_headers(owner))
+    assert resp.status_code == 200, resp.text
+    return resp.json()["id"]
+
+
+async def test_create_files_runs_into_an_owned_project(
     auth_client: httpx.AsyncClient, db_uri: str
 ) -> None:
-    """A project name reuses the owner's project of that name, creating it once."""
     _make_user(db_uri)
+    _make_user(db_uri, "bob@example.com")
     info = (await auth_client.get("/v1/info", headers=_headers())).json()
     assert info["scheduled_task_projects"] is True
-    first = await auth_client.post(
-        "/v1/scheduled-tasks",
-        json=_create_body(project_name="  Nightly triage  "),
-        headers=_headers(),
-    )
-    assert first.status_code == 200, first.text
-    project_id = first.json()["project_id"]
+    mine = await _make_project(auth_client, "mine")
+    bobs = await _make_project(auth_client, "bob's", owner="bob@example.com")
 
-    projects = (await auth_client.get("/v1/projects", headers=_headers())).json()["data"]
-    assert [(p["id"], p["name"]) for p in projects] == [(project_id, "Nightly triage")]
-
-    second = await auth_client.post(
-        "/v1/scheduled-tasks",
-        json=_create_body(name="weekly triage", project_name="Nightly triage"),
-        headers=_headers(),
-    )
-    assert second.status_code == 200, second.text
-    assert second.json()["project_id"] == project_id
-    projects = (await auth_client.get("/v1/projects", headers=_headers())).json()["data"]
-    assert len(projects) == 1
-
-    got = await auth_client.get(f"/v1/scheduled-tasks/{first.json()['id']}", headers=_headers())
-    assert got.json()["project_id"] == project_id
-
-
-async def test_update_moves_the_task_to_another_existing_project(
-    auth_client: httpx.AsyncClient, db_uri: str
-) -> None:
-    _make_user(db_uri)
-    first = (
-        await auth_client.post("/v1/projects", json={"name": "first"}, headers=_headers())
-    ).json()
-    second = (
-        await auth_client.post("/v1/projects", json={"name": "second"}, headers=_headers())
-    ).json()
-    created = (
-        await auth_client.post(
-            "/v1/scheduled-tasks", json=_create_body(project_id=first["id"]), headers=_headers()
+    for project_id in (bobs, "not-a-project-id"):
+        resp = await auth_client.post(
+            "/v1/scheduled-tasks", json=_create_body(project_id=project_id), headers=_headers()
         )
-    ).json()
-    task_url = f"/v1/scheduled-tasks/{created['id']}"
-
-    by_id = await auth_client.patch(
-        task_url, json={"project_id": second["id"]}, headers=_headers()
+        assert resp.status_code == 404, resp.text
+    # Names are resolved by the client through the projects API, not here.
+    by_name = await auth_client.post(
+        "/v1/scheduled-tasks", json=_create_body(project_name="mine"), headers=_headers()
     )
-    assert by_id.status_code == 200, by_id.text
-    assert by_id.json()["project_id"] == second["id"]
+    assert by_name.status_code == 422, by_name.text
 
-    by_name = await auth_client.patch(task_url, json={"project_name": "first"}, headers=_headers())
-    assert by_name.status_code == 200, by_name.text
-    assert by_name.json()["project_id"] == first["id"]
-    projects = (await auth_client.get("/v1/projects", headers=_headers())).json()["data"]
-    assert sorted(p["name"] for p in projects) == ["first", "second"]
-
-
-async def test_failed_create_keeps_the_project_for_a_retry(
-    auth_client: httpx.AsyncClient, db_uri: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A project is never rolled back, since another request may already use it."""
-    _make_user(db_uri)
-    create = SqlAlchemyScheduledTaskStore.create
-
-    def _fail(*args: object, **kwargs: object) -> None:
-        raise RuntimeError("insert failed")
-
-    monkeypatch.setattr(SqlAlchemyScheduledTaskStore, "create", _fail)
-    with pytest.raises(RuntimeError, match="insert failed"):
-        await auth_client.post(
-            "/v1/scheduled-tasks", json=_create_body(project_name="retried"), headers=_headers()
-        )
-    projects = (await auth_client.get("/v1/projects", headers=_headers())).json()["data"]
-    [kept] = [p for p in projects if p["name"] == "retried"]
-
-    monkeypatch.setattr(SqlAlchemyScheduledTaskStore, "create", create)
-    retry = await auth_client.post(
-        "/v1/scheduled-tasks", json=_create_body(project_name="retried"), headers=_headers()
+    created = await auth_client.post(
+        "/v1/scheduled-tasks", json=_create_body(project_id=mine), headers=_headers()
     )
-    assert retry.status_code == 200, retry.text
-    assert retry.json()["project_id"] == kept["id"]
+    assert created.status_code == 200, created.text
+    assert created.json()["project_id"] == mine
+    got = await auth_client.get(f"/v1/scheduled-tasks/{created.json()['id']}", headers=_headers())
+    assert got.json()["project_id"] == mine
 
 
-async def test_rejected_create_makes_no_project(
+async def test_update_moves_and_clears_the_task_project(
     auth_client: httpx.AsyncClient, db_uri: str
 ) -> None:
     _make_user(db_uri)
-    rejected = await auth_client.post(
-        "/v1/scheduled-tasks",
-        json=_create_body(project_name="never", timezone="Not/AZone"),
-        headers=_headers(),
-    )
-    assert rejected.status_code == 400, rejected.text
-    projects = (await auth_client.get("/v1/projects", headers=_headers())).json()["data"]
-    assert "never" not in {p["name"] for p in projects}
-
-
-async def test_update_rejects_another_users_project(
-    auth_client: httpx.AsyncClient, db_uri: str
-) -> None:
     _make_user(db_uri, "bob@example.com")
-    bobs = (
-        await auth_client.post(
-            "/v1/projects", json={"name": "bob's"}, headers=_headers("bob@example.com")
-        )
-    ).json()
+    first = await _make_project(auth_client, "first")
+    second = await _make_project(auth_client, "second")
+    bobs = await _make_project(auth_client, "bob's", owner="bob@example.com")
     created = (
-        await auth_client.post("/v1/scheduled-tasks", json=_create_body(), headers=_headers())
+        await auth_client.post(
+            "/v1/scheduled-tasks", json=_create_body(project_id=first), headers=_headers()
+        )
     ).json()
     task_url = f"/v1/scheduled-tasks/{created['id']}"
 
-    by_id = await auth_client.patch(task_url, json={"project_id": bobs["id"]}, headers=_headers())
-    assert by_id.status_code == 404, by_id.text
-    # A name is looked up among the caller's own projects, so Bob's is not reused.
-    by_name = await auth_client.patch(task_url, json={"project_name": "bob's"}, headers=_headers())
-    assert by_name.status_code == 200, by_name.text
-    assert by_name.json()["project_id"] not in (None, bobs["id"])
+    moved = await auth_client.patch(task_url, json={"project_id": second}, headers=_headers())
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["project_id"] == second
+    renamed = await auth_client.patch(task_url, json={"name": "renamed"}, headers=_headers())
+    assert renamed.json()["project_id"] == second
+
+    foreign = await auth_client.patch(task_url, json={"project_id": bobs}, headers=_headers())
+    assert foreign.status_code == 404, foreign.text
+    assert (await auth_client.get(task_url, headers=_headers())).json()["project_id"] == second
+
+    cleared = await auth_client.patch(task_url, json={"project_id": None}, headers=_headers())
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["project_id"] is None
 
 
 async def test_task_project_follows_a_rename(auth_client: httpx.AsyncClient, db_uri: str) -> None:
-    """A task keeps its project by id; the old name then names a new project."""
+    """A task stores its project by id, so renaming the project keeps it filed."""
     _make_user(db_uri)
+    project_id = await _make_project(auth_client, "before")
     created = (
         await auth_client.post(
-            "/v1/scheduled-tasks", json=_create_body(project_name="before"), headers=_headers()
+            "/v1/scheduled-tasks", json=_create_body(project_id=project_id), headers=_headers()
         )
     ).json()
-    project_id = created["project_id"]
     renamed = await auth_client.patch(
         f"/v1/projects/{project_id}", json={"name": "after"}, headers=_headers()
     )
@@ -757,19 +701,6 @@ async def test_task_project_follows_a_rename(auth_client: httpx.AsyncClient, db_
 
     got = await auth_client.get(f"/v1/scheduled-tasks/{created['id']}", headers=_headers())
     assert got.json()["project_id"] == project_id
-
-    reused = await auth_client.post(
-        "/v1/scheduled-tasks",
-        json=_create_body(name="second", project_name="after"),
-        headers=_headers(),
-    )
-    assert reused.json()["project_id"] == project_id
-    fresh = await auth_client.post(
-        "/v1/scheduled-tasks",
-        json=_create_body(name="third", project_name="before"),
-        headers=_headers(),
-    )
-    assert fresh.json()["project_id"] not in (None, project_id)
 
 
 async def test_single_user_task_projects_are_the_projects_api_projects(
@@ -790,90 +721,6 @@ async def test_single_user_task_projects_are_the_projects_api_projects(
         )
         assert by_id.status_code == 200, by_id.text
         assert by_id.json()["project_id"] == existing["id"]
-
-        by_name = await client.post("/v1/scheduled-tasks", json={**body, "project_name": "new"})
-        assert by_name.status_code == 200, by_name.text
-        projects = (await client.get("/v1/projects")).json()["data"]
-        assert {p["name"]: p["id"] for p in projects} == {
-            "existing": existing["id"],
-            "new": by_name.json()["project_id"],
-        }
-
-
-async def test_create_project_id_must_be_owned_by_the_caller(
-    auth_client: httpx.AsyncClient, db_uri: str
-) -> None:
-    _make_user(db_uri, "bob@example.com")
-    bobs_project = (
-        await auth_client.post(
-            "/v1/projects", json={"name": "bob's"}, headers=_headers("bob@example.com")
-        )
-    ).json()
-    own_project = (
-        await auth_client.post("/v1/projects", json={"name": "mine"}, headers=_headers())
-    ).json()
-
-    for project_id in (bobs_project["id"], "not-a-project-id"):
-        resp = await auth_client.post(
-            "/v1/scheduled-tasks",
-            json=_create_body(project_id=project_id),
-            headers=_headers(),
-        )
-        assert resp.status_code == 404, resp.text
-
-    resp = await auth_client.post(
-        "/v1/scheduled-tasks",
-        json=_create_body(project_id=own_project["id"], project_name="mine"),
-        headers=_headers(),
-    )
-    assert resp.status_code == 422, resp.text
-
-    resp = await auth_client.post(
-        "/v1/scheduled-tasks",
-        json=_create_body(project_id=own_project["id"]),
-        headers=_headers(),
-    )
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["project_id"] == own_project["id"]
-
-
-async def test_update_moves_and_clears_the_task_project(
-    auth_client: httpx.AsyncClient, db_uri: str
-) -> None:
-    _make_user(db_uri)
-    created = (
-        await auth_client.post(
-            "/v1/scheduled-tasks", json=_create_body(project_name="first"), headers=_headers()
-        )
-    ).json()
-    task_url = f"/v1/scheduled-tasks/{created['id']}"
-
-    moved = await auth_client.patch(task_url, json={"project_name": "second"}, headers=_headers())
-    assert moved.status_code == 200, moved.text
-    projects = (await auth_client.get("/v1/projects", headers=_headers())).json()["data"]
-    second_id = next(p["id"] for p in projects if p["name"] == "second")
-    assert moved.json()["project_id"] == second_id
-
-    renamed = await auth_client.patch(task_url, json={"name": "renamed"}, headers=_headers())
-    assert renamed.json()["project_id"] == second_id
-
-    for body in ({"project_name": None}, {"project_name": "x", "project_id": None}):
-        rejected = await auth_client.patch(task_url, json=body, headers=_headers())
-        assert rejected.status_code == 422, rejected.text
-
-    cleared = await auth_client.patch(task_url, json={"project_id": None}, headers=_headers())
-    assert cleared.status_code == 200, cleared.text
-    assert cleared.json()["project_id"] is None
-
-    # A rejected update never creates the project it names.
-    rejected = await auth_client.patch(
-        task_url,
-        json={"project_name": "never created", "permission_mode": "not-a-mode"},
-        headers=_headers(),
-    )
-    assert rejected.status_code == 400, rejected.text
-    projects = (await auth_client.get("/v1/projects", headers=_headers())).json()["data"]
-    assert "never created" not in {p["name"] for p in projects}
 
 
 async def test_create_rejects_unsupported_public_fields(

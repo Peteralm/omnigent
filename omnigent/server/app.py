@@ -255,7 +255,7 @@ class ServerInfoResponse(BaseModel):
     session_pull_requests: bool = False
     # Absent on older servers, which clients treat as the default extensions.
     filesystem_attachments: FilesystemAttachmentsInfo | None = None
-    # Scheduled tasks accept ``project_id`` / ``project_name``; older servers reject them.
+    # Scheduled tasks accept ``project_id``; older servers reject it.
     scheduled_task_projects: bool = False
     branding: BrandingInfo
 
