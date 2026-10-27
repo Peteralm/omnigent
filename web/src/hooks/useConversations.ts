@@ -2548,32 +2548,34 @@ export async function fetchProjectSessionIds(project: string, limit = 2): Promis
   return page.data.map((conv) => conv.id);
 }
 
-/** One page of the viewer's active sessions in a project, newest-first. */
+/** One page of the viewer's sessions in a project, newest-first. */
 async function fetchProjectSessionsPage(
   project: string,
   after?: string,
   limit = 20,
   sortBy: SessionSortBy = "updated_at",
+  archived = false,
 ): Promise<ConversationsPage> {
   const params = new URLSearchParams({
     order: "desc",
     sort_by: sortBy,
     limit: String(limit),
-    visibility: "mine",
+    visibility: archived ? "archived" : "mine",
     project,
   });
+  if (archived) params.set("include_archived", "true");
   if (after) params.set("after", after);
   const res = await authenticatedFetch(`/v1/sessions?${params.toString()}`);
   // Carries the server's `code`, so a dead cursor stays recognizable.
   if (!res.ok) throw await apiErrorFromResponse(res);
-  return applySessionTombstones((await res.json()) as ConversationsPage, true);
+  return applySessionTombstones((await res.json()) as ConversationsPage, !archived);
 }
 
 /**
  * Cursor-paginated list of the sessions filed under one project, fetched
  * server-side via `?project=` so a folder shows ALL its members regardless of
- * how far the global sidebar list has been scrolled. Archived sessions are
- * excluded (they leave the active sidebar). `enabled` gates the fetch so a
+ * how far the global sidebar list has been scrolled. `archived` selects the
+ * archived slice in its own cache. `enabled` gates the fetch so a
  * collapsed folder costs nothing — pass the folder's expanded state.
  *
  * Folders keep their own 20-row pages and infinite-scroll sentinel,
@@ -2583,12 +2585,18 @@ export function useProjectSessions(
   project: string,
   enabled: boolean,
   sortBy: SessionSortBy = "updated_at",
+  archived = false,
 ) {
-  const queryKey = ["project-sessions", project, ...(sortBy === "created_at" ? [sortBy] : [])];
+  const queryKey = [
+    "project-sessions",
+    project,
+    ...(sortBy === "created_at" ? [sortBy] : []),
+    ...(archived ? ["archived"] : []),
+  ];
   const query = useInfiniteQuery({
     queryKey,
     queryFn: ({ pageParam }) =>
-      fetchProjectSessionsPage(project, pageParam as string | undefined, 20, sortBy),
+      fetchProjectSessionsPage(project, pageParam as string | undefined, 20, sortBy, archived),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) =>
       lastPage.has_more ? (lastPage.last_id ?? undefined) : undefined,

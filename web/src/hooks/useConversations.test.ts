@@ -2497,39 +2497,48 @@ describe("useProjectSessions", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it.each(["updated_at", "created_at"] as const)(
-    "fetches active project sessions by %s",
-    async (sortBy) => {
-      fetchMock.mockResolvedValueOnce(
-        mockResponse({
-          data: [
-            { id: "conv_a", object: "conversation", title: "A", created_at: 0, updated_at: 9 },
-          ],
-          first_id: "conv_a",
-          last_id: "conv_a",
-          has_more: false,
-        }),
-      );
-      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-      const wrapper = ({ children }: { children: ReactNode }) =>
-        createElement(QueryClientProvider, { client: queryClient }, children);
-      const { result } = renderHook(() => useProjectSessions("Sprint 42", true, sortBy), {
-        wrapper,
-      });
+  it.each([
+    ["updated_at", false],
+    ["created_at", false],
+    ["updated_at", true],
+    ["created_at", true],
+  ] as const)("fetches project sessions by %s (archived: %s)", async (sortBy, archived) => {
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        data: [{ id: "conv_a", object: "conversation", title: "A", created_at: 0, updated_at: 9 }],
+        first_id: "conv_a",
+        last_id: "conv_a",
+        has_more: false,
+      }),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+    const { result } = renderHook(() => useProjectSessions("Sprint 42", true, sortBy, archived), {
+      wrapper,
+    });
 
-      await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      const url = fetchMock.mock.calls[0][0] as string;
-      expect(url).toContain("/v1/sessions?");
-      expect(url).toContain("project=Sprint+42");
-      expect(url).toContain("order=desc");
-      expect(url).toContain(`sort_by=${sortBy}`);
-      expect(url).toContain("limit=20");
-      expect(url).toContain("visibility=mine");
-      // Folders show active sessions only — archived ones leave the sidebar.
-      expect(url).not.toContain("include_archived");
-      expect(result.current.data?.pages[0]?.data[0]?.id).toBe("conv_a");
-    },
-  );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("/v1/sessions?");
+    expect(url).toContain("project=Sprint+42");
+    expect(url).toContain("order=desc");
+    expect(url).toContain(`sort_by=${sortBy}`);
+    expect(url).toContain("limit=20");
+    expect(url).toContain(`visibility=${archived ? "archived" : "mine"}`);
+    expect(new URL(url, "http://localhost").searchParams.get("include_archived")).toBe(
+      archived ? "true" : null,
+    );
+    expect(
+      queryClient.getQueryData([
+        "project-sessions",
+        "Sprint 42",
+        ...(sortBy === "created_at" ? [sortBy] : []),
+        ...(archived ? ["archived"] : []),
+      ]),
+    ).toBeDefined();
+    expect(result.current.data?.pages[0]?.data[0]?.id).toBe("conv_a");
+  });
 });
 
 describe("fetchProjectSessionIds", () => {

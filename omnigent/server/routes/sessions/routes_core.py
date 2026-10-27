@@ -1848,7 +1848,7 @@ def register_core_routes(
             archived_only_param = False
         elif effective_visibility == "archived":
             accessible_by_param = user_id
-            owned_by_param = None
+            owned_by_param = user_id if project else None
             shared_only_param = False
             # archived_only=True implies include_archived=True — the store
             # filters to archived=True regardless of include_archived.
