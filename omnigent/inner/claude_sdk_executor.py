@@ -1916,8 +1916,9 @@ class ClaudeSDKExecutor(Executor):
                 )
             self._extra_env.update(gateway_env)
         self._extra_env[_CLAUDE_CODE_ENABLE_TOOL_SEARCH_ENV] = "true"
-        if entrypoint := os.environ.get("OMNIGENT_CLAUDE_CODE_ENTRYPOINT"):
-            self._extra_env["CLAUDE_CODE_ENTRYPOINT"] = entrypoint
+        self._extra_env["CLAUDE_CODE_ENTRYPOINT"] = (
+            os.environ.get("OMNIGENT_CLAUDE_CODE_ENTRYPOINT") or "omnigent"
+        )
 
         # Retry policy → Anthropic SDK env vars passed to the Claude
         # CLI subprocess. ``ANTHROPIC_MAX_RETRIES`` and
