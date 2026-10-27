@@ -481,11 +481,8 @@ describe("ToolCard registered views", () => {
       expect(line.textContent).toBe(error);
       expect(line).toHaveClass("text-destructive");
       fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
-      // The expanded body repeats the error in a destructive box above the diff.
-      const errorBox = [...container.querySelectorAll("div.text-destructive")].find(
-        (element) => element !== line && element.textContent?.startsWith(error) === true,
-      );
-      expect(errorBox).toBeDefined();
+      // The expanded body repeats the error in a box above the diff.
+      expect(screen.getByTestId("tool-error-box")).toHaveTextContent(error);
       expect(container.textContent).toContain(diffText);
     },
   );
@@ -504,8 +501,7 @@ describe("ToolCard registered views", () => {
         state: "output-error",
       });
       fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
-      const errorBox = container.querySelector("div.text-destructive.border");
-      expect(errorBox?.textContent).toBe(shown);
+      expect(screen.getByTestId("tool-error-box").textContent).toBe(shown);
       expect(container.textContent).toContain("+y");
     },
   );
@@ -529,6 +525,7 @@ describe("ToolCard registered views", () => {
   it.each([
     ["input-available", "Waiting for output"],
     ["cancelled", "Tool was cancelled before output arrived."],
+    ["output-error", "Tool did not return output before the response failed."],
   ] as const)("keeps a %s edit's state under its diff", async (state, message) => {
     await registerRealView("Edit");
     const { container } = renderCard({
@@ -560,6 +557,22 @@ describe("ToolCard registered views", () => {
     expect(container.textContent).not.toContain("M src/file99.py");
     fireEvent.click(screen.getByRole("button", { name: "Expand" }));
     expect(container.textContent).toContain("M src/file99.py");
+  });
+
+  it("keeps a long diff behind the output preview until expanded", async () => {
+    await registerRealView("Edit");
+    const lines = Array.from({ length: 100 }, (_, index) => `line${index}`);
+    const { container } = renderCard({
+      name: "Edit",
+      arguments: { file_path: "/repo/a.py", old_string: "", new_string: lines.join("\n") },
+      output: "The file /repo/a.py has been updated successfully.",
+      state: "output-available",
+    });
+    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+    expect(container.textContent).toContain("+line0");
+    expect(container.textContent).not.toContain("+line99");
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    expect(container.textContent).toContain("+line99");
   });
 
   it("says a finished edit without output or a diff has no diff", async () => {

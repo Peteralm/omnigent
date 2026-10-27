@@ -39,12 +39,17 @@ export function FileEditBody({ call }: { call: ToolCall }) {
       ) : (
         <>
           {unconfirmed && outputPanel}
-          <CodePanel
-            title="Diff"
-            text={diff.text}
-            copyText={diff.text}
-            copyLabel="Copy diff"
-            language="diff"
+          <OutputSection
+            output={diff.text}
+            renderPanel={(text) => (
+              <CodePanel
+                title="Diff"
+                text={text}
+                copyText={diff.text}
+                copyLabel="Copy diff"
+                language="diff"
+              />
+            )}
           />
         </>
       )}

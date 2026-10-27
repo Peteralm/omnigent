@@ -16,7 +16,10 @@ import { cn } from "@/lib/utils";
 /** A tool call's failure message. */
 export function ToolErrorBox({ children }: { children: ReactNode }) {
   return (
-    <div className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive text-sm">
+    <div
+      className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive text-sm"
+      data-testid="tool-error-box"
+    >
       {children}
     </div>
   );
