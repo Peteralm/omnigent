@@ -748,7 +748,7 @@ describe("useStopAndDeleteConversation cache eviction", () => {
       infinitePage([conversation({ id: "conv_x" })]),
     );
     queryClient.setQueryData(
-      ["project-sessions", "Sprint 42"],
+      ["project-sessions", "Sprint 42", "updated_at", false],
       infinitePage([conversation({ id: "conv_x" }), conversation({ id: "conv_sibling" })]),
     );
     queryClient.setQueryData(["conversation-backfill", "conv_x"], conversation({ id: "conv_x" }));
@@ -803,6 +803,8 @@ describe("useStopAndDeleteConversation cache eviction", () => {
     const folder = queryClient.getQueryData<ConversationsInfiniteData>([
       "project-sessions",
       "Sprint 42",
+      "updated_at",
+      false,
     ]);
     expect(folder!.pages[0].data.map((c) => c.id)).toEqual(["conv_sibling"]);
   });
@@ -929,6 +931,8 @@ describe("useStopAndDeleteConversation cache eviction", () => {
     const folder = queryClient.getQueryData<ConversationsInfiniteData>([
       "project-sessions",
       "Sprint 42",
+      "updated_at",
+      false,
     ]);
     expect(folder!.pages[0].data.map((c) => c.id)).toEqual(["conv_x", "conv_sibling"]);
     const pinned = queryClient.getQueryData<PinnedConversationsResult>(PINNED_CONVERSATIONS_KEY);
@@ -1468,7 +1472,7 @@ describe("useRenameConversation cache patching", () => {
     // Seed only the project-folder cache; the flat list is empty (the folder
     // is the sole place this row appears).
     queryClient.setQueryData(
-      ["project-sessions", "Sprint 42"],
+      ["project-sessions", "Sprint 42", "updated_at", false],
       infinitePage([conversation({ id: "conv_x" })]),
     );
 
@@ -2498,17 +2502,24 @@ describe("useProjectSessions", () => {
   });
 
   it.each([
-    ["updated_at", false, ["project-sessions", "Sprint 42"]],
-    ["created_at", false, ["project-sessions", "Sprint 42", "created_at"]],
-    ["updated_at", true, ["project-sessions", "Sprint 42", "archived"]],
-    ["created_at", true, ["project-sessions", "Sprint 42", "created_at", "archived"]],
+    ["updated_at", false, ["project-sessions", "Sprint 42", "updated_at", false]],
+    ["created_at", false, ["project-sessions", "Sprint 42", "created_at", false]],
+    ["updated_at", true, ["project-sessions", "Sprint 42", "updated_at", true]],
+    ["created_at", true, ["project-sessions", "Sprint 42", "created_at", true]],
   ] as const)(
     "fetches project sessions by %s (archived: %s)",
     async (sortBy, archived, expectedKey) => {
       fetchMock.mockResolvedValueOnce(
         mockResponse({
           data: [
-            { id: "conv_a", object: "conversation", title: "A", created_at: 0, updated_at: 9 },
+            {
+              id: "conv_a",
+              object: "conversation",
+              title: "A",
+              created_at: 0,
+              updated_at: 9,
+              archived,
+            },
           ],
           first_id: "conv_a",
           last_id: "conv_a",
@@ -2529,7 +2540,7 @@ describe("useProjectSessions", () => {
       expect(url).toContain("order=desc");
       expect(url).toContain(`sort_by=${sortBy}`);
       expect(url).toContain("limit=20");
-      expect(url).toContain(`visibility=${archived ? "archived" : "mine"}`);
+      expect(url).toContain(`visibility=${archived ? "all" : "mine"}`);
       expect(new URL(url, "http://localhost").searchParams.get("include_archived")).toBe(
         archived ? "true" : null,
       );
@@ -2537,6 +2548,55 @@ describe("useProjectSessions", () => {
       expect(result.current.data?.pages[0]?.data[0]?.id).toBe("conv_a");
     },
   );
+
+  it("reaches first-class archives through old-server mixed and live-only pages", async () => {
+    const live = (id: string) => conversation({ id, project_id: "p_sprint", archived: false });
+    const archive = (id: string) => conversation({ id, project_id: "p_sprint", archived: true });
+    const pages = [
+      { ...infinitePage([live("live_1")]).pages[0], has_more: true },
+      { ...infinitePage([archive("archived_1"), live("live_2")]).pages[0], has_more: true },
+      { ...infinitePage([live("live_3")]).pages[0], has_more: true },
+      { ...infinitePage([archive("archived_2")]).pages[0], has_more: true },
+      infinitePage([live("live_4")]).pages[0],
+    ];
+    for (const page of pages) fetchMock.mockResolvedValueOnce(mockResponse(page));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+    const { result } = renderHook(() => useProjectSessions("Sprint 42", true, "updated_at", true), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data!.pages[0].data.map((row) => row.id)).toEqual(["archived_1"]);
+    // Keep the server cursor even when the final row in its page was filtered out.
+    expect(result.current.data!.pages[0].last_id).toBe("live_2");
+    await act(async () => {
+      await result.current.fetchNextPage();
+    });
+    await waitFor(() => expect(result.current.data!.pages).toHaveLength(2));
+    expect(result.current.data!.pages[1].data.map((row) => row.id)).toEqual(["archived_2"]);
+    await act(async () => {
+      await result.current.fetchNextPage();
+    });
+    await waitFor(() => expect(result.current.hasNextPage).toBe(false));
+    expect(result.current.data!.pages[2].data).toEqual([]);
+    const requests = fetchMock.mock.calls.map(
+      ([url]) => new URL(url as string, "http://localhost").searchParams,
+    );
+    expect(requests.map((params) => params.get("after"))).toEqual([
+      null,
+      "live_1",
+      "live_2",
+      "live_3",
+      "archived_2",
+    ]);
+    for (const params of requests) {
+      expect(params.get("visibility")).toBe("all");
+      expect(params.get("include_archived")).toBe("true");
+      expect(params.get("project")).toBe("Sprint 42");
+    }
+  });
 });
 
 describe("fetchProjectSessionIds", () => {
@@ -2697,11 +2757,11 @@ describe("useMoveToProject", () => {
       infinitePage([conversation({ id: "conv_move", labels: { omni_project: "Old folder" } })]),
     );
     queryClient.setQueryData(
-      ["project-sessions", "Old folder"],
+      ["project-sessions", "Old folder", "updated_at", false],
       infinitePage([conversation({ id: "conv_move", labels: { omni_project: "Old folder" } })]),
     );
     queryClient.setQueryData(
-      ["project-sessions", "Sprint 42"],
+      ["project-sessions", "Sprint 42", "updated_at", false],
       infinitePage([conversation({ id: "conv_resident" })]),
     );
     const wrapper = ({ children }: { children: ReactNode }) =>
@@ -2728,6 +2788,8 @@ describe("useMoveToProject", () => {
     const oldFolder = queryClient.getQueryData<ConversationsInfiniteData>([
       "project-sessions",
       "Old folder",
+      "updated_at",
+      false,
     ]);
     expect(oldFolder!.pages[0].data.find((c) => c.id === "conv_move")).toBeUndefined();
     // … while the target's pages are NOT force-fed the row — the sidebar
@@ -2735,6 +2797,8 @@ describe("useMoveToProject", () => {
     const targetFolder = queryClient.getQueryData<ConversationsInfiniteData>([
       "project-sessions",
       "Sprint 42",
+      "updated_at",
+      false,
     ]);
     expect(targetFolder!.pages[0].data.map((c) => c.id)).toEqual(["conv_resident"]);
 
@@ -2775,7 +2839,7 @@ describe("useMoveToProject", () => {
       infinitePage([conversation({ id: "conv_move", project_id: "p_old" })]),
     );
     queryClient.setQueryData(
-      ["project-sessions", "Old folder"],
+      ["project-sessions", "Old folder", "updated_at", false],
       infinitePage([conversation({ id: "conv_move", project_id: "p_old" })]),
     );
     const wrapper = ({ children }: { children: ReactNode }) =>
@@ -2798,6 +2862,8 @@ describe("useMoveToProject", () => {
     const oldFolder = queryClient.getQueryData<ConversationsInfiniteData>([
       "project-sessions",
       "Old folder",
+      "updated_at",
+      false,
     ]);
     expect(oldFolder!.pages[0].data.find((c) => c.id === "conv_move")).toBeUndefined();
 
@@ -2964,7 +3030,6 @@ describe("useMoveToProject", () => {
       const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
       queryClient.setQueryData(["projects"], [{ id: "p_sprint", name: "Sprint 42" }]);
       const row = conversation({ id: "conv_deep", project_id: "p_old", archived });
-      const archiveKey = archived ? ["archived"] : [];
       for (const sortBy of ["updated_at", "created_at"]) {
         const sortKey = sortBy === "created_at" ? [sortBy] : [];
         queryClient.setQueryData(
@@ -2972,15 +3037,15 @@ describe("useMoveToProject", () => {
           infinitePage(sortBy === windowSort ? [row] : []),
         );
         queryClient.setQueryData(
-          ["project-sessions", "Old folder", ...sortKey, ...archiveKey],
+          ["project-sessions", "Old folder", sortBy, archived],
           infinitePage([row]),
         );
         queryClient.setQueryData(
-          ["project-sessions", "Sprint 42", ...sortKey, ...archiveKey],
+          ["project-sessions", "Sprint 42", sortBy, archived],
           infinitePage([conversation({ id: "conv_resident", archived })]),
         );
       }
-      const oppositeKey = ["project-sessions", "Sprint 42", ...(archived ? [] : ["archived"])];
+      const oppositeKey = ["project-sessions", "Sprint 42", "updated_at", !archived];
       queryClient.setQueryData(oppositeKey, infinitePage([]));
       const wrapper = ({ children }: { children: ReactNode }) =>
         createElement(QueryClientProvider, { client: queryClient }, children);
@@ -2994,8 +3059,8 @@ describe("useMoveToProject", () => {
           const target = queryClient.getQueryData<ConversationsInfiniteData>([
             "project-sessions",
             "Sprint 42",
-            ...sortKey,
-            ...archiveKey,
+            sortBy,
+            archived,
           ]);
           const window = queryClient.getQueryData<ConversationsInfiniteData>([
             "conversations",
@@ -3015,8 +3080,8 @@ describe("useMoveToProject", () => {
           const oldFolder = queryClient.getQueryData<ConversationsInfiniteData>([
             "project-sessions",
             "Old folder",
-            ...sortKey,
-            ...archiveKey,
+            sortBy,
+            archived,
           ]);
           expect(oldFolder!.pages[0].data).toEqual([]);
         }
@@ -3061,13 +3126,16 @@ describe("useMoveToProject", () => {
         infinitePage([]),
       );
       queryClient.setQueryData(
-        ["project-sessions", "Old folder", "created_at"],
+        ["project-sessions", "Old folder", "created_at", false],
         infinitePage([row]),
       );
       if (otherSource === "window") {
         queryClient.setQueryData(["conversations", "", false, null, "mine"], infinitePage([row]));
       } else if (otherSource === "folder") {
-        queryClient.setQueryData(["project-sessions", "Sprint 42"], infinitePage([]));
+        queryClient.setQueryData(
+          ["project-sessions", "Sprint 42", "updated_at", false],
+          infinitePage([]),
+        );
       }
       const wrapper = ({ children }: { children: ReactNode }) =>
         createElement(QueryClientProvider, { client: queryClient }, children);
@@ -3081,6 +3149,7 @@ describe("useMoveToProject", () => {
         "project-sessions",
         "Old folder",
         "created_at",
+        false,
       ]);
       expect(oldFolder!.pages[0].data.map((c) => c.id)).toEqual(["conv_deep"]);
     },
@@ -3102,11 +3171,11 @@ describe("useMoveToProject", () => {
       ]),
     );
     queryClient.setQueryData(
-      ["project-sessions", "Before folder"],
+      ["project-sessions", "Before folder", "updated_at", false],
       infinitePage([conversation({ id: "conv_move", project_id: "p_before" })]),
     );
-    const createdSourceKey = ["project-sessions", "Before folder", "created_at"];
-    const createdTargetKey = ["project-sessions", "Sprint 42", "created_at"];
+    const createdSourceKey = ["project-sessions", "Before folder", "created_at", false];
+    const createdTargetKey = ["project-sessions", "Sprint 42", "created_at", false];
     const createdSource = infinitePage([conversation({ id: "conv_move", project_id: "p_before" })]);
     const createdTarget = infinitePage([]);
     queryClient.setQueryData(createdSourceKey, createdSource);
@@ -3128,6 +3197,8 @@ describe("useMoveToProject", () => {
     const folder = queryClient.getQueryData<ConversationsInfiniteData>([
       "project-sessions",
       "Before folder",
+      "updated_at",
+      false,
     ]);
     expect(folder!.pages[0].data.map((c) => c.id)).toEqual(["conv_move"]);
     expect(queryClient.getQueryData(createdSourceKey)).toEqual(createdSource);

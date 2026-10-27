@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/hooks/useScopeCache", () => import("@/test/mockScopeCache"));
 import { SidebarDataProvider } from "@/hooks/useSidebarData";
+import { PINNED_LABEL_KEY } from "@/lib/sessionListCache";
 import { sidebarConfig, type SidebarConfig } from "@/lib/sidebarConfig";
 // Integration tests for the Sidebar's session list. The search box no
 // longer carries a filter funnel (agent-type filter + "Show archived"
@@ -584,7 +585,8 @@ describe("Sidebar session list", () => {
     }
     selectSessionFilter("mine");
     expect(screen.getByText("pinned-session")).toBe(pinned);
-    expect(screen.getByText("filed-session")).toBeInTheDocument();
+    if (view === "archived") expect(screen.getByText("filed-session")).toBeInTheDocument();
+    else expect(screen.getByText("filed-session")).toBe(filed);
   });
 
   it("reveals a thin, theme-aware scrollbar only while scrolling", () => {
@@ -4077,7 +4079,12 @@ describe("sidebar_grouping_ui release flag", () => {
           ? { project_id: "p_Alpha" }
           : { labels: { omni_project: "Alpha" } };
       const live = conv("live_filed", "Claude Code", filed);
-      const archived = conv("archived_filed", "Claude Code", { ...filed, archived: true });
+      const archived = conv("archived_filed", "Claude Code", {
+        ...filed,
+        archived: true,
+        labels: { ...("labels" in filed ? filed.labels : {}), [PINNED_LABEL_KEY]: "1" },
+      });
+      seedPins(["archived_filed"]);
       const unfiled = conv("archived_unfiled", "Claude Code", { archived: true });
       const shared = conv("archived_shared", "Claude Code", {
         ...filed,

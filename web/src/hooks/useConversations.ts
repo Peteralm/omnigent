@@ -42,6 +42,7 @@ import {
   PIN_WRITE_MUTATION_KEY,
   PINNED_LABEL_KEY,
   filtersFromProjectQueryKey,
+  parseProjectSessionsQueryKey,
   PROJECT_LABEL_KEY,
   recentlyCreatedSessions,
   removeIdsFromPages,
@@ -2383,9 +2384,9 @@ export function useMoveToProject() {
         queryKey: ["project-sessions", targetProjectName],
       })) {
         if (!targetData) continue;
-        const sortBy = targetKey.slice(2).includes("created_at") ? "created_at" : "updated_at";
+        const { sortBy, archived } = parseProjectSessionsQueryKey(targetKey);
         const filters = filtersFromProjectQueryKey(targetKey);
-        const scope = `${sortBy}:${filters.includeArchived}`;
+        const scope = `${sortBy}:${archived}`;
         const { data: merged, found } = mergeItemsIntoPages(
           targetData,
           itemsById,
@@ -2414,9 +2415,9 @@ export function useMoveToProject() {
     for (const [key, data] of queryClient.getQueriesData<ConversationsInfiniteData>({
       queryKey: ["project-sessions"],
     })) {
-      const sortBy = key.slice(2).includes("created_at") ? "created_at" : "updated_at";
-      const scope = `${sortBy}:${filtersFromProjectQueryKey(key).includeArchived}`;
-      if (key[1] === targetProjectName || !visibleScopes.has(scope)) continue;
+      const { project, sortBy, archived } = parseProjectSessionsQueryKey(key);
+      const scope = `${sortBy}:${archived}`;
+      if (project === targetProjectName || !visibleScopes.has(scope)) continue;
       const { data: next, removed } = removeIdsFromPages(data, new Set([id]));
       if (removed) queryClient.setQueryData(key, next);
     }
@@ -2571,16 +2572,27 @@ async function fetchProjectSessionsPage(
     order: "desc",
     sort_by: sortBy,
     limit: String(limit),
-    visibility: archived ? "archived" : "mine",
+    visibility: archived ? "all" : "mine",
     project,
   });
-  // Preserve archive inclusion on older servers that ignore visibility.
+  // The all+project path resolves owned first-class projects on older servers too.
   if (archived) params.set("include_archived", "true");
   if (after) params.set("after", after);
-  const res = await authenticatedFetch(`/v1/sessions?${params.toString()}`);
-  // Carries the server's `code`, so a dead cursor stays recognizable.
-  if (!res.ok) throw await apiErrorFromResponse(res);
-  return applySessionTombstones((await res.json()) as ConversationsPage, !archived);
+  // Requests are sequential because each page supplies the next cursor.
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop
+    const res = await authenticatedFetch(`/v1/sessions?${params.toString()}`);
+    // Carries the server's code, so a dead cursor stays recognizable.
+    // eslint-disable-next-line no-await-in-loop
+    if (!res.ok) throw await apiErrorFromResponse(res);
+    // eslint-disable-next-line no-await-in-loop
+    const page = applySessionTombstones((await res.json()) as ConversationsPage, !archived);
+    if (!archived) return page;
+    const data = page.data.filter((row) => row.archived === true);
+    if (data.length || !page.has_more || !page.last_id) return { ...page, data };
+    // Skip live-only pages so an empty folder can still reach later archives.
+    params.set("after", page.last_id);
+  }
 }
 
 /**
@@ -2590,6 +2602,7 @@ async function fetchProjectSessionsPage(
  * archived slice in its own cache. `enabled` gates the fetch so a
  * collapsed folder costs nothing — pass the folder's expanded state.
  *
+ * Archived pages filter a compatible mixed slice, advancing past live-only pages.
  * Folders keep their own 20-row pages and infinite-scroll sentinel,
  * independently of the global list's configured page size.
  */
@@ -2599,12 +2612,7 @@ export function useProjectSessions(
   sortBy: SessionSortBy = "updated_at",
   archived = false,
 ) {
-  const queryKey = [
-    "project-sessions",
-    project,
-    ...(sortBy === "created_at" ? [sortBy] : []),
-    ...(archived ? ["archived"] : []),
-  ];
+  const queryKey = ["project-sessions", project, sortBy, archived];
   const query = useInfiniteQuery({
     queryKey,
     queryFn: ({ pageParam }) =>

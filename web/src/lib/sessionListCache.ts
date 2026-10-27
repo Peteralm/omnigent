@@ -10,7 +10,7 @@
 // the chat store's `session.title` handler (a terminal-side `/rename`).
 
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
-import type { Conversation, ConversationsPage } from "@/hooks/useConversations";
+import type { Conversation, ConversationsPage, SessionSortBy } from "@/hooks/useConversations";
 import type { Session } from "@/lib/types";
 
 /** Cache value shape for a `useConversations` infinite query. */
@@ -457,9 +457,27 @@ export function collectConversationIds(datas: (ConversationsInfiniteData | undef
   return [...ids];
 }
 
-/** Decode the archive slice of an unsearched project-folder query. */
+/** Decode `["project-sessions", project, sortBy, archived]`. */
+export function parseProjectSessionsQueryKey(key: readonly unknown[]): {
+  project: string;
+  sortBy: SessionSortBy;
+  archived: boolean;
+} {
+  const [prefix, project, sortBy, archived] = key;
+  if (
+    key.length !== 4 ||
+    prefix !== "project-sessions" ||
+    typeof project !== "string" ||
+    (sortBy !== "updated_at" && sortBy !== "created_at") ||
+    typeof archived !== "boolean"
+  )
+    throw new Error("Invalid project sessions query key");
+  return { project, sortBy, archived };
+}
+
+/** Membership filters for an unsearched project-folder query. */
 export function filtersFromProjectQueryKey(key: readonly unknown[]): ConversationListFilters {
-  const archived = key.slice(2).includes("archived");
+  const { archived } = parseProjectSessionsQueryKey(key);
   return {
     searchQuery: "",
     includeArchived: archived,

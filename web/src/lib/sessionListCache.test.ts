@@ -6,6 +6,7 @@ import {
   type SessionListWireItem,
   collectConversationIds,
   filtersFromConversationQueryKey,
+  parseProjectSessionsQueryKey,
   insertNewRowsIntoPages,
   mergeItemsIntoPages,
   nullsToUndefined,
@@ -446,15 +447,33 @@ describe("collectConversationIds", () => {
   });
 });
 
+describe("parseProjectSessionsQueryKey", () => {
+  it.each(["updated_at", "created_at"])(
+    "keeps sort and archive scope separate for %s",
+    (sortBy) => {
+      for (const archived of [false, true]) {
+        expect(
+          parseProjectSessionsQueryKey(["project-sessions", "archived", sortBy, archived]),
+        ).toEqual({ project: "archived", sortBy, archived });
+      }
+    },
+  );
+  it("rejects ambiguous keys", () => {
+    expect(() => parseProjectSessionsQueryKey(["project-sessions", "folder", "archived"])).toThrow(
+      "Invalid project sessions query key",
+    );
+  });
+});
+
 describe("project-folder cache membership", () => {
   it.each([
-    ["project-sessions", "proj", "archived"],
-    ["project-sessions", "proj", "created_at", "archived"],
+    ["project-sessions", "proj", "updated_at", true],
+    ["project-sessions", "proj", "created_at", true],
   ])("retains a renamed archive in %j and evicts it from live folders", (...archivedKey) => {
     const qc = new QueryClient();
     const row = conv("a", { archived: true });
     qc.setQueryData(archivedKey, data([row]));
-    const liveKey = ["project-sessions", "proj"];
+    const liveKey = ["project-sessions", "proj", "updated_at", false];
     qc.setQueryData(liveKey, data([row]));
 
     overlayTitleIntoCaches(qc, "a", "Renamed");
@@ -475,14 +494,19 @@ describe("overlayArchivedIntoCaches", () => {
     // Sidebar/archived-view cache keeps archived rows (client filters them).
     qc.setQueryData(["conversations", "", true], data([conv("a"), conv("b")]));
     // Project folder is non-archived — an archived row no longer belongs.
-    qc.setQueryData(["project-sessions", "proj"], data([conv("a")]));
+    qc.setQueryData(["project-sessions", "proj", "updated_at", false], data([conv("a")]));
 
     overlayArchivedIntoCaches(qc, "a", true);
 
     const list = qc.getQueryData<ConversationsInfiniteData>(["conversations", "", true])!;
     expect(list.pages[0].data.find((c) => c.id === "a")!.archived).toBe(true);
 
-    const folder = qc.getQueryData<ConversationsInfiniteData>(["project-sessions", "proj"])!;
+    const folder = qc.getQueryData<ConversationsInfiniteData>([
+      "project-sessions",
+      "proj",
+      "updated_at",
+      false,
+    ])!;
     expect(folder.pages[0].data.map((c) => c.id)).toEqual([]);
   });
 });
