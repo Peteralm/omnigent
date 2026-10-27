@@ -568,9 +568,10 @@ function ToolResultLine({ summary }: { summary: ToolResultSummary }) {
   const content =
     summary.segments === undefined
       ? summary.text
-      : summary.segments.map((segment) => (
+      : summary.segments.map((segment, index) => (
           <span
-            key={`${segment.tone ?? "plain"}:${segment.text}`}
+            // eslint-disable-next-line react/no-array-index-key
+            key={index}
             className={segment.tone && RESULT_TONE_CLASS[segment.tone]}
           >
             {segment.text}

@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { FileViewerContext } from "@/shell/FileViewerContext";
 import type { RenderItem } from "@/lib/renderItems";
@@ -9,7 +9,7 @@ import { ToolCard, ToolGroupSummary, formatToolDuration, getOutputPreview } from
 import type * as ToolViewsModule from "./toolViews";
 import type { ToolView } from "./toolViews";
 
-// The registry ships empty; tests register views here to exercise the plug point.
+// Tests register the views they exercise here, in place of the real registry.
 const registeredViews = vi.hoisted(() => new Map<string, ToolView>());
 vi.mock("./toolViews", () => ({ toolViewFor: (name: string) => registeredViews.get(name) }));
 
@@ -22,6 +22,12 @@ afterEach(() => {
 // TooltipProvider; createElement keeps this in a .ts file without JSX.
 function renderCard(props: Parameters<typeof ToolCard>[0]) {
   return render(createElement(TooltipProvider, null, createElement(ToolCard, props)));
+}
+
+/** Registers the tool's real view in the test registry. */
+async function registerRealView(name: string) {
+  const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
+  registeredViews.set(name, actualViews.toolViewFor(name)!);
 }
 
 // Radix tabs switch on mouse down (or focus), not on a synthetic click.
@@ -414,8 +420,7 @@ describe("ToolCard registered views", () => {
   });
 
   it("shows an edit's line counts in diff colors and its diff behind a Diff | Raw switch", async () => {
-    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
-    registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+    await registerRealView("Edit");
     const { container } = renderCard({
       name: "Edit",
       arguments: {
@@ -464,8 +469,7 @@ describe("ToolCard registered views", () => {
   ])(
     "shows a $producer's error on the result line and above its diff",
     async ({ name, args, output, error, diffText }) => {
-      const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
-      registeredViews.set(name, actualViews.toolViewFor(name)!);
+      await registerRealView(name);
       const { container } = renderCard({
         name,
         arguments: args,
@@ -491,8 +495,7 @@ describe("ToolCard registered views", () => {
   ])(
     "shows a failed edit's unrecognized output %j as its error above the diff",
     async (output, shown) => {
-      const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
-      registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+      await registerRealView("Edit");
       const { container } = renderCard({
         name: "Edit",
         arguments: { file_path: "/repo/a.py", old_string: "x", new_string: "y" },
@@ -507,8 +510,7 @@ describe("ToolCard registered views", () => {
   );
 
   it("shows output that does not confirm the edit above its diff, with no counts", async () => {
-    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
-    registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+    await registerRealView("Edit");
     const output = "Error reading /repo/missing.py: [Errno 2] No such file or directory";
     const { container } = renderCard({
       name: "Edit",
@@ -527,8 +529,7 @@ describe("ToolCard registered views", () => {
     ["input-available", "Waiting for output"],
     ["cancelled", "Tool was cancelled before output arrived."],
   ] as const)("keeps a %s edit's state under its diff", async (state, message) => {
-    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
-    registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+    await registerRealView("Edit");
     const { container } = renderCard({
       name: "Edit",
       arguments: { file_path: "/repo/a.py", old_string: "a = 1", new_string: "a = 2" },
@@ -542,8 +543,7 @@ describe("ToolCard registered views", () => {
   });
 
   it("shows a finished edit's output when its arguments give no diff", async () => {
-    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
-    registeredViews.set("apply_patch", actualViews.toolViewFor("apply_patch")!);
+    await registerRealView("apply_patch");
     const { container } = renderCard({
       name: "apply_patch",
       arguments: {},
@@ -557,8 +557,7 @@ describe("ToolCard registered views", () => {
   });
 
   it("says a finished edit without output or a diff has no diff", async () => {
-    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
-    registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+    await registerRealView("Edit");
     const { container } = renderCard({
       name: "Edit",
       arguments: { file_path: "/repo/a.py" },
@@ -575,8 +574,7 @@ describe("ToolCard registered views", () => {
   ] as const)(
     "does not call a %s edit's incomplete arguments a missing diff",
     async (state, shown) => {
-      const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
-      registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+      await registerRealView("Edit");
       const { container } = renderCard({
         name: "Edit",
         arguments: { file_path: "/repo/a.py" },
@@ -601,6 +599,24 @@ describe("ToolCard registered views", () => {
     expect(screen.queryByTestId("tool-result-line")).toBeNull();
     fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
     expect(screen.getByText("Input")).toBeInTheDocument();
+  });
+
+  it("renders a result line whose segments repeat a text", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => errors.mockRestore());
+    const segments = [
+      { text: "2 additions", tone: "added" },
+      { text: " and " },
+      { text: "3 removals", tone: "removed" },
+      { text: " and " },
+      { text: "1 rename" },
+    ] as const;
+    const text = segments.map((segment) => segment.text).join("");
+    registeredViews.set("fake_plan", { summary: () => ({ text, isError: false, segments }) });
+    renderCard({ name: "fake_plan", arguments: {}, output: "ok", state: "output-available" });
+    expect(screen.getByTestId("tool-result-line")).toHaveTextContent(text);
+    const keyWarnings = errors.mock.calls.filter(([message]) => /same key/.test(String(message)));
+    expect(keyWarnings).toEqual([]);
   });
 });
 

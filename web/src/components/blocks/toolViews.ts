@@ -19,7 +19,10 @@ export interface ToolView {
   title?: (args: Record<string, unknown>) => ToolTitle | null;
   /** Line under the row; returning `null` hides it. Replaces `summarizeToolResult`. */
   summary?: (call: ToolCall) => ToolResultSummary | null;
-  /** Expanded content in place of the generic Input / Result fields; Raw stays available. */
+  /**
+   * Expanded content in place of the generic Input / Result fields; Raw stays available.
+   * The card adds a state only while `output` is null, so the view must render any output, errors included.
+   */
   Body?: ComponentType<ToolBodyProps>;
   /** Name of the `Body` view on the switch to Raw; defaults to "Fields". */
   bodyLabel?: string;
