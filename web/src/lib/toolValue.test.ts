@@ -172,7 +172,7 @@ describe("isProseText", () => {
   });
 
   it("keeps markdown under any other field name literal", () => {
-    // WHY: only a prose field name is a reliable sign; content sniffing misread code and output.
+    // WHY: markdown-looking text is often code or output; only a prose field name marks prose.
     const markdown = "## Setup\n\n- Run **the app**\n- Read [the guide](docs/guide.md)\n";
     expect(isProseText(markdown)).toBe(false);
     for (const key of ["text", "prompt", "message", "instructions", "plan", "details", "reason"]) {
