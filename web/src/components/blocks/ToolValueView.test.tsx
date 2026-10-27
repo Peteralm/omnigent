@@ -115,6 +115,11 @@ describe("ToolValueView", () => {
     expect(hrefs.some((href) => href?.toLowerCase().startsWith("javascript:"))).toBe(false);
     expect(document.querySelector("img")).toBeNull();
     expect(document.querySelector("pre")?.textContent).toContain("onerror");
+    cleanup();
+    // `<img/src=...>` is not read as a markup tag, so it reaches the markdown sanitizer.
+    renderValue({ description: "# Plan\n\n- first\n- second <img/src=x onerror=alert(1)>" });
+    const prose = await screen.findByTestId("tool-prose-value");
+    expect(prose.querySelector("img, [onerror]")).toBeNull();
   });
 
   it("keeps file-edit text literal, alone or in a batch of edits", () => {

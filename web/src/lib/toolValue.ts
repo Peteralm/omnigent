@@ -313,13 +313,32 @@ const CODE_KEYS = new Set(["file text", "new text", "old text"]);
 // A markup tag such as `<instructions>`, which markdown would hide; autolinks do not match.
 const MARKUP_TAG = /<\/?[A-Za-z][\w-]*(?:\s[^<>\n]*)?\/?>/;
 // A link to a URL, path or anchor; `handlers[key](event)` in code does not match.
-const MARKDOWN_LINK = /(?:^|[^\w\])])\[[^\]\n]+\]\([^\s)]*[/#:][^\s)]*\)/m;
+// Bounded and unambiguous so that many unclosed brackets cannot backtrack quadratically.
+const MARKDOWN_LINK = /(?:^|[^\w\])])\[[^\]\n]{1,500}\]\([^\s)/#:]{0,2000}[/#:][^\s)]{0,2000}\)/m;
+// The chat renderer shows longer text as plain text without parsing markdown.
+const PROSE_MAX_CHARS = 50_000;
 // Weak alone: a shell comment reads as a heading and log lines as list items.
 const MARKDOWN_SIGNS = [
   /^#{1,6} \S/m, // heading
   /^ {0,3}(?:[-*+]|\d+\.) \S/m, // list item
   /\*\*\S[^*\n]*\*\*/, // bold
 ];
+
+// `text` without its closed ``` fences, in one pass; an unclosed fence stays.
+function withoutFencedCode(text: string): string {
+  const kept: string[] = [];
+  let fenceStart: number | null = null;
+  for (const line of text.split("\n")) {
+    if (fenceStart === null && line.startsWith("```")) fenceStart = kept.length;
+    else if (fenceStart !== null && /^```[ \t]*$/.test(line)) {
+      kept.length = fenceStart;
+      fenceStart = null;
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept.join("\n");
+}
 
 // JSON or an XML declaration, but not prose opening with `[link](url)` or `[1] See`.
 function looksLikeData(text: string): boolean {
@@ -343,11 +362,9 @@ export function isProseText(text: string, key?: string): boolean {
   const keyWords = key === undefined ? [] : identifierWords(key);
   if (keyWords.some((word) => hasKeyWord(CODE_KEY_WORDS, word))) return false;
   if (CODE_KEYS.has(keyWords.join(" "))) return false;
-  if (looksLikeData(text)) return false;
+  if (text.length > PROSE_MAX_CHARS || looksLikeData(text)) return false;
   // Fenced and inline code render literally as markdown too, so only the rest is checked.
-  const outsideCode = text
-    .replace(/^```[^\n]*\n[\s\S]*?^```[ \t]*$/gm, "")
-    .replace(/`[^`\n]*`/g, "");
+  const outsideCode = withoutFencedCode(text).replace(/`[^`\n]*`/g, "");
   if (MARKUP_TAG.test(outsideCode)) return false;
   const lines = outsideCode.split("\n").filter((line) => line.trim().length > 0);
   const codeLike = lines.filter(

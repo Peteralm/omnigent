@@ -209,4 +209,18 @@ describe("isProseText", () => {
     expect(isProseText("result = handlers[key](arg)\nprint(result)", "input")).toBe(false);
     expect(isProseText("Run `**a**` and `[x](https://y)`\n```\n# h\n- x\n```\n")).toBe(false);
   });
+
+  it("leaves text past the chat's markdown limit literal", () => {
+    const prose = "# Plan\n\n- first\n- second\n";
+    expect(isProseText(prose.padEnd(50_000, "."), "description")).toBe(true);
+    expect(isProseText(prose.padEnd(50_001, "."), "description")).toBe(false);
+  });
+
+  it("classifies many unclosed fences and brackets in linear time", () => {
+    const started = performance.now();
+    expect(isProseText("```a\n".repeat(9_000), "description")).toBe(true);
+    expect(isProseText("a [".repeat(15_000), "text")).toBe(false);
+    // Backtracking regexes took about half a second on these inputs, which fit the size limit.
+    expect(performance.now() - started).toBeLessThan(200);
+  });
 });
