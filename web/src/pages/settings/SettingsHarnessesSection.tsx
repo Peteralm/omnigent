@@ -45,6 +45,7 @@ import { NATIVE_CODING_AGENTS } from "@/lib/nativeCodingAgents";
 import { harnessAccountKey } from "@/lib/nativeHarnessModes";
 import { BackButton, HarnessCatalog } from "./HarnessCatalog";
 import { HarnessFixDialog, type HarnessFixMode } from "./HarnessFixDialog";
+import { applyHarnessFixResult, harnessFixMode } from "@/lib/harnessFix";
 import { useSettingsRoute } from "../../shell/settingsNav";
 
 interface HarnessEntry {
@@ -269,22 +270,11 @@ export const SettingsHarnessesSection = () => {
             harnessAccounts,
           }) => {
             const { host: fixedHost, entry } = fixTarget;
-            queryClient.setQueriesData<Host[]>({ queryKey: ["hosts"] }, (cachedHosts) =>
-              cachedHosts?.map((cachedHost) =>
-                cachedHost.host_id === fixedHost.host_id
-                  ? {
-                      ...cachedHost,
-                      configured_harnesses: configuredHarnesses,
-                      ...(harnessAccounts !== undefined
-                        ? { harness_accounts: harnessAccounts }
-                        : {}),
-                      ...(gatewayInference !== undefined
-                        ? { gateway_inference: gatewayInference }
-                        : {}),
-                    }
-                  : cachedHost,
-              ),
-            );
+            applyHarnessFixResult(queryClient, fixedHost.host_id, {
+              configuredHarnesses,
+              harnessAccounts,
+              gatewayInference,
+            });
             if (credentialKind) {
               setCredentialKinds((current) => ({
                 ...current,
@@ -578,7 +568,7 @@ function HarnessCard({
   onFix: (mode: HarnessFixMode) => void;
 }) {
   const status = harnessStatus(entry.harness, host);
-  const mode = fixMode(status.reason);
+  const mode = harnessFixMode(status.reason);
   const canFix = canSetup && !!host && !host.sandbox_provider;
   const opensDetail = status.ready || (status.needsSetup && canFix);
   const navigate = useNavigate();
@@ -672,7 +662,7 @@ function HarnessDetail({
 }) {
   const status = harnessStatus(entry.harness, host);
   const credentialProblem = isCredentialProblem(status.reason);
-  const mode = fixMode(status.reason);
+  const mode = harnessFixMode(status.reason);
   const canFix = canSetup && !!host && !host.sandbox_provider;
   const gateway = host?.gateway_inference?.[entry.harness] === true;
   const account = host?.harness_accounts?.[harnessAccountKey(entry.harness)];
@@ -830,12 +820,6 @@ function HarnessDetail({
       </div>
     </>
   );
-}
-
-function fixMode(reason: string | null): HarnessFixMode {
-  if (reason === "version-too-low") return "update";
-  if (reason === "binary-missing" || reason === "unconfigured") return "install";
-  return "reconfigure";
 }
 
 function isCredentialProblem(reason: string | null): boolean {

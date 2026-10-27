@@ -131,6 +131,30 @@ afterEach(() => {
 });
 
 describe("HarnessFixDialog", () => {
+  it("installs a missing Codex binary before offering authentication", async () => {
+    const fetch = vi.mocked(authenticatedFetch).getMockImplementation()!;
+    vi.mocked(authenticatedFetch).mockImplementation(async (input, init) => {
+      if (String(input).endsWith("/install"))
+        return json({
+          object: "harness_install",
+          harness: "codex-native",
+          configured_harnesses: { "codex-native": "needs-auth" },
+        });
+      return fetch(input, init);
+    });
+    renderDialog({
+      mode: "install",
+      host: { ...baseProps.host, configured_harnesses: { "codex-native": "binary-missing" } },
+    });
+    expect(screen.getByRole("heading", { name: "Install Codex" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Install" })).toBeEnabled();
+    expect(screen.queryByText("Personal subscription")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Install" }));
+    expect(await screen.findByRole("radio", { name: /Personal subscription/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Authenticate" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
+  });
+
   it.each([
     ["install", "not installed"],
     ["update", "out of date"],

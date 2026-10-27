@@ -21,6 +21,11 @@ implements them separately, so a fix for one harness does not reach the others.
   host has not configured can be hidden from the picker. When harness repair is
   enabled, Settings → Harnesses shows the missing credential as an actionable
   card; its Reconfigure control and full-card click replace a separate banner action.
+- `new-chat-setup`: with `harness_install` enabled, New Chat’s **Set up**
+  action opens the shared Reconfigure flow in place for connected user hosts.
+  Missing binaries install first; success refreshes readiness without leaving
+  the composer. Managed hosts retain their setup checklist, and flag-off
+  guidance is unchanged.
 - `account-management`: Settings harness cards show the non-secret account label
   reported by the connected host (email, plan, organization, or provider names).
   An expired Codex account offers **Sign in again**. Codex sign-in opens a

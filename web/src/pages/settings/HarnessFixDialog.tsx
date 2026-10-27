@@ -50,15 +50,9 @@ import { ApiError } from "@/lib/sessionsApi";
 import { cn } from "@/lib/utils";
 import { HarnessCredentialForm } from "@/shell/HarnessCredentialForm";
 
-export type HarnessFixMode = "reconfigure" | "update" | "install" | "switch";
+import type { HarnessFixMode, HarnessFixResult } from "@/lib/harnessFix";
 
-export interface HarnessFixResult {
-  configuredHarnesses: Record<string, boolean | string>;
-  credentialKind?: HarnessCredentialKind;
-  version?: string;
-  gatewayInference?: Record<string, boolean> | null;
-  harnessAccounts?: Record<string, HarnessAccount> | null;
-}
+export type { HarnessFixMode, HarnessFixResult } from "@/lib/harnessFix";
 
 export interface HarnessFixDialogProps {
   open: boolean;
@@ -141,11 +135,14 @@ export function HarnessFixDialog(props: HarnessFixDialogProps) {
         ? "setup"
         : mode === "update"
           ? "progress"
-          : mode === "install" && !hasCredentialCards
+          : mode === "install" &&
+              (!hasCredentialCards || host.configured_harnesses?.[harness] === "binary-missing")
             ? "install"
             : credentialChoicePhase;
 
   const [phase, setPhase] = useState<Phase>(initialPhase);
+  const [installed, setInstalled] = useState(false);
+  const needsInstall = mode === "install" && !installed;
   const [choice, setChoice] = useState<HarnessCredentialKind>("personal");
   const [error, setError] = useState("");
   const [stillNotReady, setStillNotReady] = useState(false);
@@ -277,8 +274,11 @@ export function HarnessFixDialog(props: HarnessFixDialogProps) {
         return;
       }
       if (mode === "update") needsSetup();
-      else if (hasCredentialCards) authenticate(choice);
-      else setPhase(credentialChoicePhase);
+      else if (hasCredentialCards && initialPhase !== "install") authenticate(choice);
+      else {
+        setInstalled(true);
+        setPhase(credentialChoicePhase);
+      }
     } catch (reason) {
       fail(reason, id);
     }
@@ -291,6 +291,7 @@ export function HarnessFixDialog(props: HarnessFixDialogProps) {
     hasCredentialCards,
     credentialChoicePhase,
     installHarness,
+    initialPhase,
     mode,
     needsSetup,
     requiresManualSetup,
@@ -303,6 +304,7 @@ export function HarnessFixDialog(props: HarnessFixDialogProps) {
     runId.current += 1;
     credentialDefaultSettled.current = false;
     setChoice("personal");
+    setInstalled(false);
     setError("");
     setStillNotReady(false);
     setUpdatedNeedsSetup(false);
@@ -587,7 +589,7 @@ export function HarnessFixDialog(props: HarnessFixDialogProps) {
               harnessLabel={harnessLabel}
               isaacSupported={isaacSupported}
               personalSupported={personalSupported}
-              canUseCredentialForm={mode !== "install" && canUseCredentialForm}
+              canUseCredentialForm={!needsInstall && canUseCredentialForm}
               onUseCredentialForm={() => setPhase("credentials")}
             />
           ) : phase === "error" ? (
@@ -660,14 +662,14 @@ export function HarnessFixDialog(props: HarnessFixDialogProps) {
               </Button>
               <Button
                 disabled={credentialDecisionPending}
-                onClick={() => (mode === "install" ? void start() : authenticate(choice))}
+                onClick={() => (needsInstall ? void start() : authenticate(choice))}
               >
                 {credentialDecisionPending ? (
                   <>
                     <Loader2Icon className="size-4 animate-spin" />
                     Checking…
                   </>
-                ) : mode === "install" ? (
+                ) : needsInstall ? (
                   "Install"
                 ) : (
                   "Authenticate"

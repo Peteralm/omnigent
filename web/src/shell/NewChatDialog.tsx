@@ -129,6 +129,8 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { useServerInfo } from "@/lib/CapabilitiesContext";
+import { HarnessFixDialog } from "@/pages/settings/HarnessFixDialog";
+import { applyHarnessFixResult, harnessFixMode } from "@/lib/harnessFix";
 import { HarnessSetupDialog } from "@/shell/HarnessSetupDialog";
 import {
   harnessReadinessOnHost,
@@ -248,6 +250,7 @@ import {
   isNativeCodingAgent,
   nativeAgentHasCapability,
   nativeCodingAgentForAvailableAgent,
+  nativeCodingAgentForHarness,
   nativeWrapperLabelsForAgent,
 } from "@/lib/nativeCodingAgents";
 import {
@@ -255,6 +258,7 @@ import {
   CLAUDE_NATIVE_PERMISSION_MODES,
 } from "@/lib/claudePermissionMode";
 import {
+  harnessAccountKey,
   AGY_NATIVE_DEFAULT_SKIP_MODE,
   AGY_NATIVE_SKIP_MODES,
   AGY_NATIVE_SKIP_VALUE,
@@ -867,7 +871,7 @@ function harnessWarningMessage(
  *
  * Gated on the setup feature: when OFF, renders the original "run omnigent
  * setup" guidance so the flag-off UI is unchanged. When ON, offers a "Set up
- * <agent>" action that opens the shared {@link HarnessSetupDialog}.
+ * <agent>" action that opens harness repair in place.
  */
 function HarnessSetupNotice({
   agentName,
@@ -7655,18 +7659,37 @@ export function NewChatLandingScreen() {
         </DialogContent>
       </Dialog>
 
-      {/* Harness "Set up" dialog — the single home for install/login (and later
-          API key / gateway) setup, opened from the composer notice or a picker
-          row's "Set up →". */}
-      <HarnessSetupDialog
-        open={setupTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setSetupTarget(null);
-        }}
-        agentName={setupTarget?.agentName}
-        harness={setupTarget?.harness ?? null}
-        host={setupTarget?.host}
-      />
+      {harnessInstallEnabled &&
+      setupTarget?.host &&
+      !setupTarget.host.sandbox_provider &&
+      setupTarget.harness ? (
+        <HarnessFixDialog
+          open
+          onOpenChange={(open) => !open && setSetupTarget(null)}
+          mode={harnessFixMode(
+            harnessReadinessOnHost(setupTarget.harness, setupTarget.host).reason,
+          )}
+          host={setupTarget.host}
+          harness={
+            nativeCodingAgentForHarness(`${harnessAccountKey(setupTarget.harness)}-native`)
+              ?.harness ?? setupTarget.harness
+          }
+          harnessLabel={setupTarget.agentName ?? setupTarget.harness}
+          onFixed={(result) =>
+            applyHarnessFixResult(queryClient, setupTarget.host!.host_id, result)
+          }
+        />
+      ) : (
+        <HarnessSetupDialog
+          open={setupTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setSetupTarget(null);
+          }}
+          agentName={setupTarget?.agentName}
+          harness={setupTarget?.harness ?? null}
+          host={setupTarget?.host}
+        />
+      )}
 
       {/* Create custom agent dialog — opened from the agent picker dropdown. */}
       <CreateAgentDialog
