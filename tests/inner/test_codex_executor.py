@@ -2802,6 +2802,9 @@ async def test_run_turn_emits_correlated_codex_builtin_tool_events() -> None:
         "changes": [{"path": "/tmp/workspace/result.txt", "kind": {"type": "add"}}]
     }
     assert tool_events[3].metadata["observed_call_completed"] is True
+    assert isinstance(tool_events[4], ToolCallComplete)
+    assert tool_events[4].result == "File change applied.\nadd /tmp/workspace/result.txt"
+    assert tool_events[4].status is ToolCallStatus.SUCCESS
     assert isinstance(events[-1], TurnComplete)
     assert events[-1].response == "done"
 

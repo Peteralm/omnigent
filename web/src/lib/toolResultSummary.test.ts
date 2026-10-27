@@ -173,7 +173,7 @@ describe("summarizeFileEdit", () => {
           { path: "b.py", kind: { type: "update" }, diff: "@@ -1 +1,2 @@\n keep\n+three\n" },
         ],
       },
-      output: "add a.py\nupdate b.py",
+      output: "File change applied.\nadd a.py\nupdate b.py",
       state: "output-available",
     };
     expect(summarizeFileEdit(call)?.text).toBe("Updated 2 files with 3 additions");
@@ -201,6 +201,27 @@ describe("summarizeFileEdit", () => {
     ).toEqual({ text: "Error: oldString not found in content", isError: true });
   });
 
+  it("shows no counts for Codex patch output that does not say it applied", () => {
+    // Older runners wrote the same output for applied and declined patches.
+    const legacy: ToolCall = {
+      name: "apply_patch",
+      args: { changes: [{ path: "/repo/app.py", kind: { type: "update" }, diff: "@@\n-a\n+b\n" }] },
+      output: "update /repo/app.py",
+      state: "output-available",
+    };
+    expect(summarizeFileEdit(legacy)).toBeNull();
+  });
+
+  it("does not read a successful shell's [error] output as a failure", () => {
+    const bash: ToolCall = {
+      name: "Bash",
+      args: { command: "printf '[error] recovered cache entry'" },
+      output: "[error] recovered cache entry",
+      state: "output-available",
+    };
+    expect(summarizeToolResult(bash)?.isError).not.toBe(true);
+  });
+
   it("marks a replace-all edit's counts as a lower bound", () => {
     const replaceAll = edit("ok", {
       args: { file_path: "a.py", old_string: "x", new_string: "y", replace_all: true },
@@ -216,7 +237,7 @@ describe("summarizeFileEdit", () => {
       args: {
         changes: [{ path: "a.py", kind: { type: "update", move_path: "b.py" }, diff: "" }],
       },
-      output: "update a.py",
+      output: "File change applied.\nupdate a.py",
       state: "output-available",
     };
     expect(summarizeFileEdit(call)).toBeNull();

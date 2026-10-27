@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 _UNAPPLIED_STATUSES = frozenset({"failed", "declined"})
+# Must match the web transcript's check for an applied Codex patch.
+_APPLIED_LINE = "File change applied."
 
 
 def file_change_failure(item: Mapping[str, object]) -> str | None:
@@ -21,21 +23,23 @@ def file_change_failure(item: Mapping[str, object]) -> str | None:
 
 
 def file_change_output(item: Mapping[str, object]) -> str:
-    """One ``<kind> <path>`` line per change, led by an error line if unapplied.
+    """One ``<kind> <path>`` line per change, led by the change's outcome.
 
-    The ``Error:`` lead lets the transcript show the failure instead of the
-    patch's line counts.
+    The lead line lets the transcript tell an applied patch, which shows line
+    counts, from a failed one; output without it is ambiguous.
 
     :param item: Codex ``fileChange`` item, e.g. ``{"changes": [{"path":
         "/repo/x.py", "kind": {"type": "update"}, "diff": "..."}],
         "status": "completed"}``.
-    :returns: e.g. ``"update /repo/x.py"``, or
+    :returns: e.g. ``"File change applied.\\nupdate /repo/x.py"``, or
         ``"Error: File change ended with status declined.\\nupdate /repo/x.py"``.
     """
     lines: list[str] = []
     failure = file_change_failure(item)
     if failure is not None:
         lines.append(f"Error: {failure}")
+    elif item.get("status") == "completed":
+        lines.append(_APPLIED_LINE)
     changes = item.get("changes")
     for change in changes if isinstance(changes, list) else []:
         if not isinstance(change, dict):

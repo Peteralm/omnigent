@@ -6,6 +6,7 @@ import { type ShellToolOutput, parseShellToolOutput } from "@/lib/shellToolOutpu
 import { shellToolCall, toolCallCategory } from "@/lib/toolTitle";
 import {
   type ParsedToolOutput,
+  editErrorMessage,
   firstLine,
   humanizeKey,
   isRecord,
@@ -41,6 +42,9 @@ export interface ToolResultSegment {
   tone?: "added" | "removed";
 }
 
+// Codex patch output leads with its outcome. Older output reads the same whether
+// or not the patch applied, so it gets no counts.
+const CODEX_PATCH_APPLIED = "File change applied.";
 const SUMMARY_MAX_CHARS = 300;
 const FIELD_SUMMARY_PARTS = 2;
 const FILE_SEARCH_TOOLS = new Set(["Grep", "Glob", "grep", "glob"]);
@@ -85,9 +89,10 @@ export function summarizeToolResult(call: ToolCall): ToolResultSummary | null {
  */
 export function summarizeFileEdit(call: ToolCall): ToolResultSummary | null {
   const generic = summarizeToolResult(call);
-  if (generic?.isError === true || call.state !== "output-available" || call.output === null) {
-    return generic;
-  }
+  if (call.state !== "output-available" || call.output === null) return generic;
+  const error = editErrorMessage(call.output);
+  if (error !== null) return failure(firstLine(error));
+  if (call.name === "apply_patch" && firstLine(call.output) !== CODEX_PATCH_APPLIED) return generic;
   const diff = getFileEditDiff(call.name, call.args);
   if (diff === null || diff.additions + diff.removals === 0) return generic;
   const counts: ToolResultSegment[] = [];

@@ -442,45 +442,46 @@ describe("ToolCard registered views", () => {
     expect(container.textContent).toContain("-RETRIES = 3");
   });
 
-  it("shows a failed edit's error on the result line and above its diff", async () => {
-    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
-    registeredViews.set("apply_patch", actualViews.toolViewFor("apply_patch")!);
-    const { container } = renderCard({
+  it.each([
+    {
+      producer: "Codex declined patch",
       name: "apply_patch",
-      arguments: {
-        changes: [{ path: "/repo/app.py", kind: { type: "update" }, diff: "@@\n-a\n+b\n" }],
-      },
+      args: { changes: [{ path: "/repo/app.py", kind: { type: "update" }, diff: "@@\n-a\n+b\n" }] },
       output: "Error: File change ended with status declined.\nupdate /repo/app.py",
-      state: "output-available",
-    });
-    const line = screen.getByTestId("tool-result-line");
-    expect(line.textContent).toBe("Error: File change ended with status declined.");
-    expect(line).toHaveClass("text-destructive");
-    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
-    expect(
-      screen.getByText(/^Error: File change ended with status declined\./, { selector: "div" }),
-    ).toHaveClass("text-destructive");
-    expect(container.textContent).toContain("+++ /repo/app.py");
-  });
-
-  it("shows an OpenCode edit's bracketed error instead of line counts", async () => {
-    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
-    registeredViews.set("edit", actualViews.toolViewFor("edit")!);
-    const { container } = renderCard({
+      error: "Error: File change ended with status declined.",
+      diffText: "+++ /repo/app.py",
+    },
+    {
+      producer: "OpenCode failed edit",
       name: "edit",
-      arguments: { filePath: "a.py", oldString: "x", newString: "y" },
+      args: { filePath: "a.py", oldString: "x", newString: "y" },
       output: "[error] Error: oldString not found in content",
-      state: "output-available",
-    });
-    const line = screen.getByTestId("tool-result-line");
-    expect(line.textContent).toBe("Error: oldString not found in content");
-    expect(line).toHaveClass("text-destructive");
-    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
-    expect(
-      screen.getByText("Error: oldString not found in content", { selector: "div" }),
-    ).toHaveClass("text-destructive");
-    expect(container.textContent).toContain("+y");
-  });
+      error: "Error: oldString not found in content",
+      diffText: "+y",
+    },
+  ])(
+    "shows a $producer's error on the result line and above its diff",
+    async ({ name, args, output, error, diffText }) => {
+      const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
+      registeredViews.set(name, actualViews.toolViewFor(name)!);
+      const { container } = renderCard({
+        name,
+        arguments: args,
+        output,
+        state: "output-available",
+      });
+      const line = screen.getByTestId("tool-result-line");
+      expect(line.textContent).toBe(error);
+      expect(line).toHaveClass("text-destructive");
+      fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+      // The expanded body repeats the error in a destructive box above the diff.
+      const errorBox = [...container.querySelectorAll("div.text-destructive")].find(
+        (element) => element !== line && element.textContent?.startsWith(error) === true,
+      );
+      expect(errorBox).toBeDefined();
+      expect(container.textContent).toContain(diffText);
+    },
+  );
 
   it.each([
     ["input-available", "Waiting for output"],
@@ -498,6 +499,21 @@ describe("ToolCard registered views", () => {
     expect(container.textContent).toContain("+a = 2");
     expect(screen.getByText(message)).toBeInTheDocument();
     expect(screen.queryByText("No diff recorded for this edit.")).toBeNull();
+  });
+
+  it("shows a finished edit's output when its arguments give no diff", async () => {
+    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
+    registeredViews.set("apply_patch", actualViews.toolViewFor("apply_patch")!);
+    const { container } = renderCard({
+      name: "apply_patch",
+      arguments: {},
+      output: "Success. Updated the following files:\nM src/app.py",
+      state: "output-available",
+    });
+    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+    expect(screen.getByText("No diff recorded for this edit.")).toBeInTheDocument();
+    expect(screen.getByText("Output")).toBeInTheDocument();
+    expect(container.textContent).toContain("M src/app.py");
   });
 
   it("does not call a running edit's still-empty arguments a missing diff", async () => {

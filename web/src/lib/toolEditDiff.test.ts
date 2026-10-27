@@ -136,6 +136,23 @@ describe("getFileEditDiff", () => {
     expect(getFileEditDiff("Edit", { old_string: "a", new_string: "b" })).toMatchObject({
       countsAreMinimum: false,
     });
+    expect(
+      getFileEditDiff("edit", { oldString: "a", newString: "b", replaceAll: true }),
+    ).toMatchObject({ countsAreMinimum: true });
+  });
+
+  it('keeps removed "-- comment" lines of an update diff without a hunk header', () => {
+    const diff = getFileEditDiff("apply_patch", {
+      changes: [
+        {
+          path: "q.sql",
+          kind: { type: "update" },
+          diff: "--- a/q.sql\n+++ b/q.sql\n--- old note\n+-- new note\n",
+        },
+      ],
+    });
+    expect(diff).toMatchObject({ additions: 1, removals: 1 });
+    expect(diff?.text).toBe("--- q.sql\n+++ q.sql\n--- old note\n+-- new note");
   });
 
   it("skips an update diff's own file headers when counting", () => {

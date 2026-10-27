@@ -6,6 +6,7 @@ import {
   pickTitleField,
   statusLabel,
   statusTone,
+  editErrorMessage,
   toolErrorMessage,
 } from "./toolValue";
 
@@ -97,8 +98,6 @@ describe("toolErrorMessage", () => {
     ['{"error": true}', "The tool reported an error."],
     ['{"error": {"code": 500}}', "The tool reported an error."],
     ["<tool_use_error></tool_use_error>", "The tool reported an error."],
-    ["[error] Error: oldString not found in content", "Error: oldString not found in content"],
-    ["[error]", "The tool reported an error."],
   ])("reports %s as a failure", (output, message) => {
     expect(toolErrorMessage(parseToolOutput(output))).toBe(message);
   });
@@ -108,9 +107,32 @@ describe("toolErrorMessage", () => {
     '{"errors": []}',
     '{"error": null}',
     "Task plan updated (2 tasks).",
-    "[errors] none",
   ])("treats %s as a success", (output) => {
     expect(toolErrorMessage(parseToolOutput(output))).toBeNull();
+  });
+});
+
+describe("editErrorMessage", () => {
+  it.each([
+    ["[error] Error: oldString not found in content", "Error: oldString not found in content"],
+    ["[error]", "The tool reported an error."],
+    [
+      "<tool_use_error>String to replace not found.</tool_use_error>",
+      "String to replace not found.",
+    ],
+  ])("reports %s as a failure", (output, message) => {
+    expect(editErrorMessage(output)).toBe(message);
+  });
+
+  it.each(["[errors] none", "[ERROR] plugin missing; continuing.", "Edit applied."])(
+    "treats %s as a success",
+    (output) => {
+      expect(editErrorMessage(output)).toBeNull();
+    },
+  );
+
+  it("is not applied to other tools' output", () => {
+    expect(toolErrorMessage(parseToolOutput("[error] recovered cache entry"))).toBeNull();
   });
 });
 

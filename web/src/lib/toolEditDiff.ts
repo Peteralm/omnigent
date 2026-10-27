@@ -60,7 +60,8 @@ function asPair(value: unknown): EditPair | null {
   const newText = value.new_string ?? value.newText ?? value.newString;
   if (typeof oldText !== "string" || typeof newText !== "string") return null;
   if (oldText === newText) return null;
-  return { oldText, newText, replaceAll: value.replace_all === true };
+  const replaceAll = value.replace_all === true || value.replaceAll === true;
+  return { oldText, newText, replaceAll };
 }
 
 function editPairs(args: Record<string, unknown>): EditPair[] {
@@ -132,9 +133,17 @@ function patchChangesDiff(changes: unknown): FileEditDiff | null {
 function unifiedDiffBody(diff: string): string[] {
   const lines = splitLines(diff);
   const firstHunk = lines.findIndex((line) => line.startsWith("@@"));
-  return firstHunk === -1
-    ? lines.filter((line) => !/^(?:\+\+\+|---) /.test(line))
-    : lines.slice(firstHunk);
+  if (firstHunk !== -1) return lines.slice(firstHunk);
+  // Without a hunk header, file headers are a leading "---"/"+++" pair; a later
+  // "--- x" is a removed "-- x" line.
+  let bodyStart = 0;
+  while (
+    lines[bodyStart]?.startsWith("--- ") === true &&
+    lines[bodyStart + 1]?.startsWith("+++ ") === true
+  ) {
+    bodyStart += 2;
+  }
+  return lines.slice(bodyStart);
 }
 
 function splitLines(text: string): string[] {
