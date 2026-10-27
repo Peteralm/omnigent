@@ -189,8 +189,7 @@ function StringValue({ text, fieldKey }: { text: string; fieldKey?: string }) {
   return isToken ? <span className="font-mono text-[0.92em]">{text}</span> : text;
 }
 
-// Headings stay near body size so a description's `# Title` does not dwarf the row.
-// Important, because the chat's heading sizes and margins in index.css are unlayered.
+// Keeps a description's headings near body size; `!` beats the unlayered rules in index.css.
 const PROSE_MARKDOWN_CLASS =
   "[&_:is(h1,h2,h3,h4,h5,h6)]:mt-3! [&_:is(h1,h2,h3,h4,h5,h6)]:mb-1! [&_[data-streamdown^=heading]]:text-[1.05em]!";
 

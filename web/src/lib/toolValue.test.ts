@@ -155,6 +155,7 @@ describe("isProseText", () => {
     expect(isProseText("Line one\nline two", "description")).toBe(true);
     expect(isProseText("Fix the bug\n\nDetails here", "pr_body")).toBe(true);
     expect(isProseText("Use `Array<T>` here\nand there", "notes")).toBe(true);
+    expect(isProseText("Use ``a`b`` or `<T>` here\nand there", "notes")).toBe(true);
     expect(isProseText("Looks good\nShip it", "comments")).toBe(true);
     expect(isProseText("Faster builds\nSmaller bundles", "releaseNote")).toBe(true);
     expect(isProseText("[1] See the RFC.\n\nMore notes", "summary")).toBe(true);
@@ -199,6 +200,7 @@ describe("isProseText", () => {
       isProseText("Follow these.\n<instructions>\nBe brief\n</instructions>", "description"),
     ).toBe(false);
     expect(isProseText("Intro\n<!-- draft\nHidden by the comment", "description")).toBe(false);
+    expect(isProseText("Intro\n<summary-card>\nHidden\n</summary-card>", "body")).toBe(false);
     // Markdown reads these as text or raw HTML rather than code, so their markup counts.
     for (const unclearCode of [
       "Intro\n\n    ```\n<!--\n    ```\nHidden remainder",
@@ -206,6 +208,10 @@ describe("isProseText", () => {
       "Steps\n\n- Item\n  ```\n  code\n```\n```\n<instructions>\n```",
       "<details>\n```\n<instructions>\n```\n</details>",
       "<details>\n<summary>Logs</summary>\nUse `<Button>` here\n</details>",
+      "Intro\nUse \\`<instructions>` here",
+      "Intro\nUse ``` <instructions> ` here",
+      "See `a\nb` <instructions> `c`",
+      "Intro\nText <span title='`'>x<instructions>`",
     ]) {
       expect(isProseText(unclearCode, "description")).toBe(false);
     }

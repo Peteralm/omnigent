@@ -298,21 +298,23 @@ const CODE_KEY_WORDS = new Set([
 ]);
 // A markup tag such as `<instructions>`, which markdown would hide; autolinks do not match.
 // GitHub bodies' `<details>`, `<summary>` and `<br>` render as markdown and do not count.
-const MARKUP_TAG = /<\/?(?!(?:details|summary|br|sub|sup|kbd)\b)[A-Za-z][\w-]*(?:\s[^<>\n]*)?\/?>/i;
+const MARKUP_TAG =
+  /<\/?(?!(?:details|summary|br|sub|sup|kbd)(?![\w-]))[A-Za-z][\w-]*(?:\s[^<>\n]*)?\/?>/i;
 
 // Indentation, `>` quote markers and list bullets that can nest a block in a line.
 const CONTAINER_PREFIX = /^(?:[ \t>]|(?:[-*+]|\d{1,9}[.)])[ \t])*/;
 // A fence indented at most three spaces; a deeper one is code or nested in a list.
 const PLAIN_FENCE = /^( {0,3})(`{3,}|~{3,})(.*)$/;
 
-// `text` without the code markdown renders literally, in one pass: closed fences and code
-// spans outside HTML blocks. A fence markdown may read differently keeps the rest.
+// Drops closed fences, and code spans outside HTML blocks; from an unclear fence, keeps the rest.
 function withoutCode(text: string): string {
   const lines = text.split("\n");
   const kept: string[] = [];
   let fence: { start: number; indent: string; marker: string } | null = null;
   // What ends the HTML block in progress, in which fences and code spans are raw HTML.
   let htmlBlockEnd: "blank line" | "-->" | null = null;
+  // Whether the paragraph so far leaves no code span or HTML tag open.
+  let spansClear = true;
   for (const [index, line] of lines.entries()) {
     const content = line.replace(CONTAINER_PREFIX, "");
     const fenceLike = /^(?:`{3}|~{3})/.test(content);
@@ -347,11 +349,39 @@ function withoutCode(text: string): string {
       const comment = content.startsWith("<!--");
       htmlBlockEnd = !comment ? "blank line" : content.includes("-->", 4) ? null : "-->";
       kept.push(line);
+    } else if (spansClear) {
+      const { text: withoutSpans, clear } = withoutCodeSpans(line);
+      kept.push(withoutSpans);
+      spansClear = clear;
     } else {
-      kept.push(line.replace(/`[^`]*`/g, ""));
+      kept.push(line);
+      spansClear = line.trim() === "";
     }
   }
   return kept.join("\n");
+}
+
+// `line` without its code spans, read left to right as markdown does. From an HTML tag or a
+// backtick run with no partner on the line, the rest stays and `clear` is false.
+function withoutCodeSpans(line: string): { text: string; clear: boolean } {
+  const special = /\\|<[A-Za-z/!?]|`+/g;
+  let text = "";
+  let position = 0;
+  for (let match = special.exec(line); match !== null; match = special.exec(line)) {
+    if (match[0] === "\\") {
+      special.lastIndex = match.index + 2;
+      continue;
+    }
+    const runs = /`+/g;
+    runs.lastIndex = special.lastIndex;
+    let closer = match[0].startsWith("<") ? null : runs.exec(line);
+    while (closer !== null && closer[0].length !== match[0].length) closer = runs.exec(line);
+    if (closer === null) return { text: text + line.slice(position), clear: false };
+    text += line.slice(position, match.index);
+    position = runs.lastIndex;
+    special.lastIndex = position;
+  }
+  return { text: text + line.slice(position), clear: true };
 }
 
 // `text` without its closed `<!-- -->` comments, which markdown hides; linear in its length.
