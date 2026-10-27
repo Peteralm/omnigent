@@ -381,6 +381,7 @@ def _deps(sched_store: FakeScheduledTaskStore, **overrides: Any) -> FireDeps:
         managed_launches=overrides.get("managed_launches"),
         startup_inputs=overrides.get("startup_inputs"),
         project_store=overrides.get("project_store"),
+        single_user_owner=overrides.get("single_user_owner", RESERVED_USER_LOCAL),
     )
 
 
@@ -525,28 +526,31 @@ async def test_active_creates_session_grant_and_run() -> None:
 class FakeProjectStore:
     def __init__(self, existing: set[tuple[str, str | None]]) -> None:
         self.existing = existing
+        self.lookups: list[tuple[str, str | None]] = []
 
     def get(self, project_id: str, *, user_id: str | None) -> SimpleNamespace | None:
+        self.lookups.append((project_id, user_id))
         found = (project_id, user_id) in self.existing
         return SimpleNamespace(id=project_id) if found else None
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("task_owner", "existing", "filed_into"),
+    ("task_owner", "single_user_owner", "existing", "filed_into"),
     [
-        ("alice@example.com", {("proj_1", "alice@example.com")}, "proj_1"),
-        ("alice@example.com", {("proj_1", "bob@example.com")}, None),
-        ("alice@example.com", set(), None),
+        ("alice@example.com", RESERVED_USER_LOCAL, {("proj_1", "alice@example.com")}, "proj_1"),
+        ("alice@example.com", RESERVED_USER_LOCAL, {("proj_1", "bob@example.com")}, None),
+        ("alice@example.com", RESERVED_USER_LOCAL, set(), None),
         # A single-user task stores no owner; its projects belong to "local",
         # or to no owner on a server without an auth provider.
-        (None, {("proj_1", RESERVED_USER_LOCAL)}, "proj_1"),
-        (None, {("proj_1", None)}, "proj_1"),
+        (None, RESERVED_USER_LOCAL, {("proj_1", RESERVED_USER_LOCAL)}, "proj_1"),
+        (None, None, {("proj_1", None)}, "proj_1"),
     ],
     ids=["owned", "other-users", "deleted", "single-user-local", "single-user-no-auth"],
 )
 async def test_fired_session_is_filed_into_the_task_project(
     task_owner: str | None,
+    single_user_owner: str | None,
     existing: set[tuple[str, str | None]],
     filed_into: str | None,
 ) -> None:
@@ -558,13 +562,20 @@ async def test_fired_session_is_filed_into_the_task_project(
         return None
 
     on_fire = build_on_fire(
-        _deps(store, conversation_store=conv_store, project_store=projects),
+        _deps(
+            store,
+            conversation_store=conv_store,
+            project_store=projects,
+            single_user_owner=single_user_owner,
+        ),
         launch_dispatch=_launch,
     )
     await on_fire(0, "task_1")
     await _drain()
 
     assert conv_store.created[0]["project_id"] == filed_into
+    # One lookup per fire, as the task's owner.
+    assert projects.lookups == [("proj_1", task_owner or single_user_owner)]
     # A missing project leaves the session unfiled and is cleared from the task;
     # the run still starts.
     assert [run["status"] for run in store.runs] == ["running"]
@@ -574,12 +585,19 @@ async def test_fired_session_is_filed_into_the_task_project(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("task_owner", "announced_to"),
-    [("alice@example.com", ["alice@example.com"]), (None, [RESERVED_USER_LOCAL, None])],
-    ids=["owner", "single-user"],
+    ("task_owner", "single_user_owner", "announced_to"),
+    [
+        ("alice@example.com", RESERVED_USER_LOCAL, ["alice@example.com"]),
+        (None, RESERVED_USER_LOCAL, [RESERVED_USER_LOCAL]),
+        (None, None, [None]),
+    ],
+    ids=["owner", "single-user-local", "single-user-no-auth"],
 )
 async def test_fired_session_is_pushed_to_the_owners_open_tabs(
-    task_owner: str | None, announced_to: list[str | None], monkeypatch: pytest.MonkeyPatch
+    task_owner: str | None,
+    single_user_owner: str | None,
+    announced_to: list[str | None],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Open sidebars learn of the run, so a project folder shows it without a reload."""
     perm = FakePermissionStore()
@@ -594,7 +612,8 @@ async def test_fired_session_is_pushed_to_the_owners_open_tabs(
     async def _launch(conv: Any, task: Any) -> None:
         return None
 
-    await build_on_fire(_deps(store, permission_store=perm), launch_dispatch=_launch)(0, "task_1")
+    deps = _deps(store, permission_store=perm, single_user_owner=single_user_owner)
+    await build_on_fire(deps, launch_dispatch=_launch)(0, "task_1")
     await _drain()
 
     [session_id] = {session for _, session, _ in announced}

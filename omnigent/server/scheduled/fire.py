@@ -203,6 +203,9 @@ class FireDeps:
     app_state: Any | None = None
     # Confirms a task's project still exists before filing the session into it.
     project_store: Any | None = None
+    # Who owns a single-user task's projects and open tabs: "local" behind an
+    # auth provider, ``None`` on a server without one.
+    single_user_owner: str | None = RESERVED_USER_LOCAL
 
 
 @dataclass
@@ -598,7 +601,9 @@ async def _run_fire_for_task(
             error_code="owner_grant_failed",
         )
         return
-    _announce_fired_session(effective, conv.id)
+    _announce_session_added(
+        effective.user_id if effective.user_id is not None else deps.single_user_owner, conv.id
+    )
 
     # Default-public access is optional decoration on top of the owner
     # grant, so a failure here must not cancel an otherwise-ready run — the
@@ -958,14 +963,8 @@ async def _fire_project_id(deps: FireDeps, task: ScheduledTask) -> str | None:
     if task.project_id is None or deps.project_store is None:
         # Without a store the id can't be verified, so file nothing.
         return None
-    # A single-user task stores no owner, while its projects belong to "local"
-    # (or to no owner on a server without an auth provider).
-    owners = [task.user_id] if task.user_id is not None else [RESERVED_USER_LOCAL, None]
-    project = None
-    for owner in owners:
-        project = await asyncio.to_thread(deps.project_store.get, task.project_id, user_id=owner)
-        if project is not None:
-            break
+    owner = task.user_id if task.user_id is not None else deps.single_user_owner
+    project = await asyncio.to_thread(deps.project_store.get, task.project_id, user_id=owner)
     if project is None:
         _logger.warning(
             "scheduled fire: task %s project %s no longer exists; leaving the session unfiled",
@@ -1049,17 +1048,6 @@ async def _attach_cost_budget(deps: FireDeps, task: ScheduledTask, conversation_
             conversation_id,
             exc_info=True,
         )
-
-
-def _announce_fired_session(task: ScheduledTask, conversation_id: str) -> None:
-    """Push the new session to the owner's open tabs, including project folders.
-
-    A single-user task stores no owner; its tabs listen as ``"local"`` behind an
-    auth provider and as ``None`` without one, so both are told.
-    """
-    owners = [task.user_id] if task.user_id is not None else [RESERVED_USER_LOCAL, None]
-    for owner in owners:
-        _announce_session_added(owner, conversation_id)
 
 
 async def _grant_owner(deps: FireDeps, task: ScheduledTask, conversation_id: str) -> None:

@@ -84,6 +84,7 @@ from omnigent.server import (
     shutdown_state,
 )
 from omnigent.server.auth import (
+    RESERVED_USER_LOCAL,
     AuthProvider,
     SharingMode,
     auth_mode,
@@ -1892,6 +1893,7 @@ def create_app(
                 startup_inputs=app_inst.state.startup_inputs,
                 app_state=app_inst.state,
                 project_store=project_store,
+                single_user_owner=RESERVED_USER_LOCAL if auth_provider is not None else None,
             )
             if not automations_v2_enabled:
                 # Legacy Run now uses this fire path, including for paused tasks.
