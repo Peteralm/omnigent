@@ -111,15 +111,29 @@ describe("ToolValueView", () => {
       notes: 'Look <img src="x" onerror="alert(1)">\nhere',
     });
     await screen.findByRole("link", { name: "docs" });
-    const hrefs = [...document.querySelectorAll("a")].map((link) => link.getAttribute("href"));
-    expect(hrefs.some((href) => href?.toLowerCase().startsWith("javascript:"))).toBe(false);
+    const hrefs = [...document.querySelectorAll("a[href]")].map((link) =>
+      link.getAttribute("href"),
+    );
+    expect(hrefs).toEqual(["https://x/docs"]);
     expect(document.querySelector("img")).toBeNull();
     expect(document.querySelector("pre")?.textContent).toContain("onerror");
     cleanup();
     // `<img/src=...>` is not read as a markup tag, so it reaches the markdown sanitizer.
-    renderValue({ description: "# Plan\n\n- first\n- second <img/src=x onerror=alert(1)>" });
+    renderValue({
+      description:
+        "# Plan\n\n- first <img/src=x onerror=alert(1)>\n- second <img\nsrc=x\nonerror=alert(1)>",
+    });
     const prose = await screen.findByTestId("tool-prose-value");
     expect(prose.querySelector("img, [onerror]")).toBeNull();
+  });
+
+  it("renders a templated GitHub body as prose, hiding its comments", async () => {
+    renderValue({
+      body: "<!-- Describe your change -->\n## Summary\n\n- Fix it\n\n<details><summary>Logs</summary>\n\nAll green\n</details>\n",
+    });
+    const prose = await screen.findByTestId("tool-prose-value");
+    expect(prose.querySelector("details summary")?.textContent).toBe("Logs");
+    expect(prose.textContent).not.toContain("Describe your change");
   });
 
   it("keeps file-edit text literal, alone or in a batch of edits", () => {

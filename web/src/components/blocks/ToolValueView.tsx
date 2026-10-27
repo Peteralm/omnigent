@@ -190,8 +190,9 @@ function StringValue({ text, fieldKey }: { text: string; fieldKey?: string }) {
 }
 
 // Headings stay near body size so a description's `# Title` does not dwarf the row.
+// Important, because the chat's heading sizes and margins in index.css are unlayered.
 const PROSE_MARKDOWN_CLASS =
-  "[&_:is(h1,h2,h3,h4,h5,h6)]:mt-3 [&_:is(h1,h2,h3,h4,h5,h6)]:mb-1 [&_[data-streamdown^=heading]]:text-[1.05em]";
+  "[&_:is(h1,h2,h3,h4,h5,h6)]:mt-3! [&_:is(h1,h2,h3,h4,h5,h6)]:mb-1! [&_[data-streamdown^=heading]]:text-[1.05em]!";
 
 /** Long text written for people, as markdown in the interface font. */
 function ProseValue({ text }: { text: string }) {

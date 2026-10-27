@@ -182,6 +182,8 @@ describe("isProseText", () => {
     expect(isProseText("[\n  true,\n  false\n]", "body")).toBe(false);
     expect(isProseText("[null, 1]\n", "body")).toBe(false);
     expect(isProseText("<html>\n<body>Hi</body>\n</html>", "body")).toBe(false);
+    expect(isProseText("<!DOCTYPE html>\n<p>Hi</p>", "body")).toBe(false);
+    expect(isProseText('<?xml version="1.0"?>\n<a/>', "body")).toBe(false);
     expect(isProseText("Follow these.\n<instructions>\nBe brief\n</instructions>", "prompt")).toBe(
       false,
     );
@@ -196,6 +198,11 @@ describe("isProseText", () => {
     expect(isProseText("# Plan\n\n- first\n- second")).toBe(true);
     expect(isProseText("See **this** part\n- and more")).toBe(true);
     expect(isProseText("Read [the guide](docs/guide.md)\nfirst")).toBe(true);
+    const templatedBody =
+      "<!-- Describe your change -->\n## Summary\n\n- Fix it<br>today\n\n" +
+      "<details><summary>Logs</summary>\n\nAll green\n</details>\n";
+    expect(isProseText(templatedBody, "body")).toBe(true);
+    expect(isProseText(templatedBody)).toBe(true);
   });
 
   it("does not read plain text, code, logs or JSON as markdown", () => {
@@ -220,6 +227,7 @@ describe("isProseText", () => {
     const started = performance.now();
     expect(isProseText("```a\n".repeat(9_000), "description")).toBe(true);
     expect(isProseText("a [".repeat(15_000), "text")).toBe(false);
+    expect(isProseText("<!--a\n".repeat(8_000), "text")).toBe(false);
     // Backtracking regexes took about half a second on these inputs, which fit the size limit.
     expect(performance.now() - started).toBeLessThan(200);
   });

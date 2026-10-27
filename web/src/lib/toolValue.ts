@@ -311,7 +311,8 @@ const CODE_KEY_WORDS = new Set([
 // File-edit payloads (`oldText`, `file_text`) whose words alone are too generic to exclude.
 const CODE_KEYS = new Set(["file text", "new text", "old text"]);
 // A markup tag such as `<instructions>`, which markdown would hide; autolinks do not match.
-const MARKUP_TAG = /<\/?[A-Za-z][\w-]*(?:\s[^<>\n]*)?\/?>/;
+// GitHub bodies' `<details>`, `<summary>` and `<br>` render as markdown and do not count.
+const MARKUP_TAG = /<\/?(?!(?:details|summary|br|sub|sup|kbd)\b)[A-Za-z][\w-]*(?:\s[^<>\n]*)?\/?>/i;
 // A link to a URL, path or anchor; `handlers[key](event)` in code does not match.
 // Bounded and unambiguous so that many unclosed brackets cannot backtrack quadratically.
 const MARKDOWN_LINK = /(?:^|[^\w\])])\[[^\]\n]{1,500}\]\([^\s)/#:]{0,2000}[/#:][^\s)]{0,2000}\)/m;
@@ -340,10 +341,23 @@ function withoutFencedCode(text: string): string {
   return kept.join("\n");
 }
 
-// JSON or an XML declaration, but not prose opening with `[link](url)` or `[1] See`.
+// `text` without its closed `<!-- -->` comments, which markdown hides; linear in its length.
+function withoutHtmlComments(text: string): string {
+  let kept = "";
+  let position = 0;
+  for (;;) {
+    const open = text.indexOf("<!--", position);
+    const close = open < 0 ? -1 : text.indexOf("-->", open + 4);
+    if (close < 0) return kept + text.slice(position);
+    kept += text.slice(position, open);
+    position = close + 3;
+  }
+}
+
+// JSON, XML or an HTML document, but not prose opening with `[link](url)` or `[1] See`.
 function looksLikeData(text: string): boolean {
   const start = text.trimStart();
-  if (/^(?:\{|<[!?])/.test(start)) return true;
+  if (/^(?:\{|<\?xml\b|<!DOCTYPE\b)/i.test(start)) return true;
   if (!start.startsWith("[")) return false;
   // `[{`, `["`, `[[` and `[]` open an array even when the text is cut off.
   if (/^\[\s*[[{"\]]/.test(start)) return true;
@@ -364,7 +378,7 @@ export function isProseText(text: string, key?: string): boolean {
   if (CODE_KEYS.has(keyWords.join(" "))) return false;
   if (text.length > PROSE_MAX_CHARS || looksLikeData(text)) return false;
   // Fenced and inline code render literally as markdown too, so only the rest is checked.
-  const outsideCode = withoutFencedCode(text).replace(/`[^`\n]*`/g, "");
+  const outsideCode = withoutHtmlComments(withoutFencedCode(text).replace(/`[^`\n]*`/g, ""));
   if (MARKUP_TAG.test(outsideCode)) return false;
   const lines = outsideCode.split("\n").filter((line) => line.trim().length > 0);
   const codeLike = lines.filter(

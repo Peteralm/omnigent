@@ -407,6 +407,7 @@ def test_virtualized_transcript_returns_after_losing_layout(
 _ISSUE_TITLE = "Claude mod replaces tmux paste for native turns"
 _PR_ERROR = "Error: 422 Validation Failed: A pull request already exists"
 _ISSUE_DESCRIPTION = (
+    "## Context\n\n"
     "Follow-up to [#11607](<https://github.com/omnigent-ai/omnigent/pull/11607>).\n\n"
     "1. Show added and removed line counts.\n2. Show display names for MCP servers."
 )
@@ -519,6 +520,11 @@ def test_tool_rows_read_as_actions_with_their_outcome(
     expect(description).not_to_contain_text("](")
     font = description.locator("p").first.evaluate("el => getComputedStyle(el).fontFamily")
     assert "mono" not in font.lower()
+    # A description's heading stays near body size instead of the chat's 1.4em.
+    sizes = description.evaluate(
+        "el => ['h2', 'p'].map(tag => parseFloat(getComputedStyle(el.querySelector(tag)).fontSize))"
+    )
+    assert sizes[0] <= sizes[1] * 1.1, sizes
     raw = page.get_by_role("tab", name="Raw")
     expect(page.get_by_role("tab", name="Fields")).to_have_attribute("aria-selected", "true")
     raw.click()

@@ -296,11 +296,7 @@ function GenericToolBody({ call, duration }: ToolBodyProps) {
           </TabsTrigger>
         </TabsList>
       </div>
-      <TabsContent
-        value="fields"
-        className="grid grid-cols-[auto_minmax(0,1fr)] gap-y-2"
-        data-testid="tool-fields-grid"
-      >
+      <TabsContent value="fields" className="grid grid-cols-[auto_minmax(0,1fr)] gap-y-2">
         {hasInput ? <ToolValueView value={args} subgrid /> : gridResult}
         {hasInput && hasResult && (
           <section className="col-span-2 grid grid-cols-subgrid gap-y-1">
