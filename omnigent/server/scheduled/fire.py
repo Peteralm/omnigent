@@ -80,6 +80,7 @@ from omnigent.server.routes._session_create_validation import (
     validate_session_model_metadata,
     validate_session_permission_mode,
 )
+from omnigent.server.routes._sessions.helpers import _announce_session_added
 from omnigent.server.scheduled.dispatch_scheduler import (
     FireIdentity,
     FireIdentityRevoked,
@@ -597,6 +598,7 @@ async def _run_fire_for_task(
             error_code="owner_grant_failed",
         )
         return
+    _announce_fired_session(effective, conv.id)
 
     # Default-public access is optional decoration on top of the owner
     # grant, so a failure here must not cancel an otherwise-ready run — the
@@ -1047,6 +1049,17 @@ async def _attach_cost_budget(deps: FireDeps, task: ScheduledTask, conversation_
             conversation_id,
             exc_info=True,
         )
+
+
+def _announce_fired_session(task: ScheduledTask, conversation_id: str) -> None:
+    """Push the new session to the owner's open tabs, including project folders.
+
+    A single-user task stores no owner; its tabs listen as ``"local"`` behind an
+    auth provider and as ``None`` without one, so both are told.
+    """
+    owners = [task.user_id] if task.user_id is not None else [RESERVED_USER_LOCAL, None]
+    for owner in owners:
+        _announce_session_added(owner, conversation_id)
 
 
 async def _grant_owner(deps: FireDeps, task: ScheduledTask, conversation_id: str) -> None:

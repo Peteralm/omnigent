@@ -571,6 +571,38 @@ async def test_fired_session_is_filed_into_the_task_project(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("task_owner", "announced_to"),
+    [("alice@example.com", ["alice@example.com"]), (None, [RESERVED_USER_LOCAL, None])],
+    ids=["owner", "single-user"],
+)
+async def test_fired_session_is_pushed_to_the_owners_open_tabs(
+    task_owner: str | None, announced_to: list[str | None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Open sidebars learn of the run, so a project folder shows it without a reload."""
+    perm = FakePermissionStore()
+    announced: list[tuple[str | None, str, int]] = []
+    monkeypatch.setattr(
+        fire_mod,
+        "_announce_session_added",
+        lambda owner, session_id: announced.append((owner, session_id, len(perm.grants))),
+    )
+    store = FakeScheduledTaskStore(rows={"task_1": _task(user_id=task_owner)})
+
+    async def _launch(conv: Any, task: Any) -> None:
+        return None
+
+    await build_on_fire(_deps(store, permission_store=perm), launch_dispatch=_launch)(0, "task_1")
+    await _drain()
+
+    [session_id] = {session for _, session, _ in announced}
+    assert [owner for owner, _, _ in announced] == announced_to
+    # Announced only once the owner can read it: the stream access-checks it.
+    assert all(grants >= 1 for _, _, grants in announced)
+    assert session_id == store.runs[0]["conversation_id"]
+
+
+@pytest.mark.asyncio
 async def test_fire_keeps_a_project_the_task_moved_to_mid_fire() -> None:
     stale = _task(project_id="proj_1")
     store = SequencedScheduledTaskStore([stale, stale])
