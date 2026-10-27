@@ -297,13 +297,15 @@ async def test_create_worktree_timeout_raises_unavailable(
     """No host reply within the timeout raises WorktreeHostUnavailableError.
 
     Uses a host with no auto-replier so the pending future never
-    resolves; tiny patched timeouts keep the test fast. Only a host that
+    resolves. Only the wait that host should get is tiny; the other is
+    long enough that choosing it trips the outer guard. Only a host that
     does not advertise the create budget is told it may be outdated.
     """
     import omnigent.server.routes._host_worktree as hw_mod
 
-    monkeypatch.setattr(hw_mod, "_WORKTREE_TIMEOUT_S", 0.05)
-    monkeypatch.setattr(hw_mod, "_WORKTREE_CREATE_TIMEOUT_S", 0.05)
+    legacy = capabilities is None
+    monkeypatch.setattr(hw_mod, "_WORKTREE_TIMEOUT_S", 0.05 if legacy else 30.0)
+    monkeypatch.setattr(hw_mod, "_WORKTREE_CREATE_TIMEOUT_S", 30.0 if legacy else 0.05)
     registry = HostRegistry()
     registry.register(
         host_id="host_silent",
@@ -315,12 +317,15 @@ async def test_create_worktree_timeout_raises_unavailable(
     assert conn is not None
 
     with pytest.raises(WorktreeHostUnavailableError) as exc:
-        await create_worktree_on_host(
-            host_registry=registry,
-            host_conn=conn,
-            repo_path="/repo",
-            branch_name="x",
-            base_branch=None,
+        await asyncio.wait_for(
+            create_worktree_on_host(
+                host_registry=registry,
+                host_conn=conn,
+                repo_path="/repo",
+                branch_name="x",
+                base_branch=None,
+            ),
+            timeout=5.0,
         )
     assert "did not respond" in exc.value.message
     assert ("older version" in exc.value.message) is expects_older_host_hint
