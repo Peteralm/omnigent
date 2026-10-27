@@ -743,6 +743,39 @@ def test_record_hook_event_ignores_foreign_identity(tmp_path: Path) -> None:
     assert count_hook_events(bridge_dir) == 2
 
 
+@pytest.mark.parametrize("event_name", ["SessionStart", "Stop", "StopFailure"])
+@pytest.mark.parametrize("marker", ["agent_id", "subagent_path"])
+@pytest.mark.parametrize("parent_started", [False, True])
+def test_record_hook_event_keeps_child_identity_out_of_parent_state(
+    tmp_path: Path, event_name: str, marker: str, parent_started: bool
+) -> None:
+    bridge_dir = tmp_path / "bridge"
+    parent_transcript = tmp_path / "parent.jsonl"
+    if parent_started:
+        record_hook_event(
+            bridge_dir,
+            {
+                "hook_event_name": "SessionStart",
+                "session_id": "parent",
+                "transcript_path": str(parent_transcript),
+            },
+        )
+    child: dict[str, Any] = {
+        "hook_event_name": event_name,
+        "session_id": "parent" if marker == "agent_id" else "child",
+        "transcript_path": str(tmp_path / "subagents" / "agent-child.jsonl"),
+    }
+    if marker == "agent_id":
+        child["agent_id"] = "child"
+        child["transcript_path"] = str(tmp_path / "child.jsonl")
+    record_hook_event(bridge_dir, child)
+
+    assert read_transcript_path(bridge_dir) == (parent_transcript if parent_started else None)
+    assert read_claude_session_id(bridge_dir) == ("parent" if parent_started else None)
+    assert read_seen_claude_session_ids(bridge_dir) == ({"parent"} if parent_started else set())
+    assert count_hook_events(bridge_dir) == 1 + int(parent_started)
+
+
 def test_record_hook_event_session_start_rotates_identity(tmp_path: Path) -> None:
     """
     A SessionStart announcement legitimately moves the bridge's identity.
@@ -8785,8 +8818,10 @@ def test_hook_record_stop_failure_last_assistant_message_not_used() -> None:
 # ── stop_hook_seen_since: subagent filtering ─────────────────────────
 
 
+@pytest.mark.parametrize("event_name", ["Stop", "StopFailure"])
+@pytest.mark.parametrize("transcript_kind", ["subagent", "ordinary", "omitted"])
 def test_stop_hook_seen_since_ignores_subagent_stop(
-    tmp_path: Path,
+    tmp_path: Path, event_name: str, transcript_kind: str
 ) -> None:
     """
     ``stop_hook_seen_since`` must skip subagent ``Stop`` events.
@@ -8814,14 +8849,15 @@ def test_stop_hook_seen_since_ignores_subagent_stop(
         },
     )
     cursor = 1
-    # Subagent Stop — must not be detected.
+    child: dict[str, Any] = {"hook_event_name": event_name, "session_id": "subagent"}
+    if transcript_kind != "omitted":
+        child["transcript_path"] = str(
+            subagent_transcript if transcript_kind == "subagent" else tmp_path / "child.jsonl"
+        )
+    # A foreign native session remains a child without a distinctive path.
     record_hook_event(
         bridge_dir,
-        {
-            "hook_event_name": "Stop",
-            "session_id": "subagent",
-            "transcript_path": str(subagent_transcript),
-        },
+        child,
     )
     assert not stop_hook_seen_since(bridge_dir, cursor)
 
