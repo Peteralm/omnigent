@@ -145,12 +145,6 @@ def test_edit_rows_show_line_counts_and_diff(
     applied = page.locator('[data-slot="collapsible-trigger"]', has_text="greet.py").first
     applied_result = applied.get_by_test_id("tool-result-line")
     expect(applied_result).to_have_text("Updated with 2 additions and 3 removals")
-    expect(applied_result.get_by_text("2 additions", exact=True)).to_have_class(
-        re.compile(r"text-green-600")
-    )
-    expect(applied_result.get_by_text("3 removals", exact=True)).to_have_class(
-        re.compile(r"text-red-600")
-    )
     failed = page.locator('[data-slot="collapsible-trigger"]', has_text="settings.py").first
     failed_result = failed.get_by_test_id("tool-result-line")
     expect(failed_result).to_contain_text(
@@ -158,20 +152,25 @@ def test_edit_rows_show_line_counts_and_diff(
     )
     expect(failed_result).not_to_contain_text("Updated")
     color = "el => getComputedStyle(el).color"
-    assert failed_result.evaluate(color) != applied_result.evaluate(color)
-    page.wait_for_timeout(1_500)  # Hold both outcomes on screen for the recording.
+    plain = applied_result.evaluate(color)
+    added = applied_result.get_by_text("2 additions", exact=True).evaluate(color)
+    removed = applied_result.get_by_text("3 removals", exact=True).evaluate(color)
+    # Each count has its own color, distinct from the rest of the line.
+    assert len({plain, added, removed}) == 3
+    assert failed_result.evaluate(color) != plain
 
     applied.click()
-    diff_tab = page.get_by_role("tab", name="Diff")
+    card = applied.locator("xpath=..")
+    diff_tab = card.get_by_role("tab", name="Diff")
     expect(diff_tab).to_have_attribute("aria-selected", "true")
-    diff = page.locator('[data-language="diff"]').first
+    diff = card.locator('[data-language="diff"]')
     expect(diff).to_contain_text('-    print("Welcome back")')
     expect(diff).to_contain_text("+    print(message)")
-    page.wait_for_timeout(2_000)
 
-    page.get_by_role("tab", name="Raw").click()
-    expect(page.get_by_text("Parameters", exact=True)).to_be_visible()
-    page.wait_for_timeout(1_500)
+    raw_tab = card.get_by_role("tab", name="Raw")
+    raw_tab.click()
+    expect(raw_tab).to_have_attribute("aria-selected", "true")
+    expect(card).to_contain_text('"path": "greet.py"')
+    expect(diff).to_have_count(0)
     diff_tab.click()
     expect(diff).to_be_visible()
-    page.wait_for_timeout(1_000)

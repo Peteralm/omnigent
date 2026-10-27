@@ -570,10 +570,7 @@ def _open_edit_rows(page: Page, chat: ChatSessionContract) -> None:
     _seed_edit_calls(chat)
     page.goto(chat.url)
     expect(page.get_by_text("Greeting renamed.")).to_be_visible(timeout=20_000)
-    # Short pauses keep each step readable in a recording of this journey.
-    page.wait_for_timeout(1_000)
     page.get_by_role("button", name=re.compile(r"^Worked")).click()
-    page.wait_for_timeout(1_000)
     page.get_by_text(re.compile(r"^Edited \d files$")).click()
 
 
@@ -591,7 +588,6 @@ def test_patch_row_counts_lines_across_its_files(
     patch = page.get_by_role("button", name=re.compile(r"^Edit 3 files"))
     result = patch.get_by_test_id("tool-result-line")
     expect(result).to_have_text("Updated 3 files with 3 additions and 2 removals")
-    page.wait_for_timeout(1_500)  # Hold the collapsed row on screen for the recording.
 
     patch.click()
     expect(page.get_by_role("tab", name="Diff")).to_have_attribute("aria-selected", "true")
@@ -599,7 +595,6 @@ def test_patch_row_counts_lines_across_its_files(
     for line in ("--- /repo/src/farewell.py", "+    print(f'Bye {name}')", "-LEGACY = True"):
         expect(diff).to_contain_text(line)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-    page.wait_for_timeout(2_000)
 
 
 @pytest.mark.browser_context_args(record_video_size={"width": 1280, "height": 720})
@@ -622,10 +617,8 @@ def test_failed_edit_rows_show_their_error(
     )
     color = "el => getComputedStyle(el).color"
     assert declined_result.evaluate(color) != applied_result.evaluate(color)
-    page.wait_for_timeout(1_500)
 
     declined.click()
     body = declined.locator("xpath=..")
     expect(body.get_by_text("File change ended with status declined.").last).to_be_visible()
     expect(body.locator('[data-language="diff"]')).to_contain_text("+DEBUG = True")
-    page.wait_for_timeout(2_000)
