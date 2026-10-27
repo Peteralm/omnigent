@@ -279,7 +279,7 @@ const PROSE_KEY_WORDS = new Set([
   "reason",
   "summary",
 ]);
-// Field names whose text is source, a command or data, which must keep its exact layout.
+// Field names whose text is source, a command, output or data, which must keep its exact layout.
 const CODE_KEY_WORDS = new Set([
   "cmd",
   "code",
@@ -289,6 +289,9 @@ const CODE_KEY_WORDS = new Set([
   "diff",
   "html",
   "json",
+  "log",
+  "logs",
+  "output",
   "patch",
   "pattern",
   "query",
@@ -296,28 +299,42 @@ const CODE_KEY_WORDS = new Set([
   "script",
   "source",
   "sql",
+  "stack",
   "stderr",
   "stdout",
+  "str",
   "string",
+  "traceback",
   "xml",
   "yaml",
 ]);
+// File-edit payloads (`oldText`, `file_text`) whose words alone are too generic to exclude.
+const CODE_KEYS = new Set(["file text", "new text", "old text"]);
+// Openings of JSON (`{`, `["a"`, `[1`) and of XML declarations, not of a `[link](url)`.
+const DATA_START = /^\s*(?:\{|\[\s*[[{"\d\]-]|<[!?])/;
+// A markup tag such as `<instructions>`, which markdown would hide; autolinks do not match.
+const MARKUP_TAG = /<\/?[A-Za-z][\w-]*(?:\s[^<>\n]*)?\/?>/;
+const MARKDOWN_LINK = /\[[^\]\n]+\]\(\S+\)/;
+// Weak alone: a shell comment reads as a heading and log lines as list items.
 const MARKDOWN_SIGNS = [
-  /\[[^\]\n]+\]\(\S+\)/, // [text](url)
   /^#{1,6} \S/m, // heading
   /^ {0,3}(?:[-*+]|\d+\.) \S/m, // list item
   /\*\*\S[^*\n]*\*\*/, // bold
 ];
 
-// Whether a long string reads as prose rather than code or data: the field name
-// decides first, then markdown syntax in text with few code-like lines.
+// Whether a long string reads as prose rather than code or data. Code-like field
+// names, data, markup and indented code stay literal; then a prose field name, a
+// markdown link or two kinds of markdown syntax mark prose.
 export function isProseText(text: string, key?: string): boolean {
   const keyWords = key === undefined ? [] : identifierWords(key);
   if (keyWords.some((word) => CODE_KEY_WORDS.has(word))) return false;
-  if (keyWords.some((word) => PROSE_KEY_WORDS.has(word))) return true;
-  if (/^\s*[[{<]/.test(text)) return false;
+  if (CODE_KEYS.has(keyWords.join(" "))) return false;
+  if (DATA_START.test(text)) return false;
+  if (MARKUP_TAG.test(text.replace(/`[^`\n]*`/g, ""))) return false;
   const lines = text.split("\n").filter((line) => line.trim().length > 0);
   const codeLike = lines.filter((line) => /^(?:\t| {4})|[;{}]\s*$/.test(line)).length;
   if (codeLike * 4 > lines.length) return false;
-  return MARKDOWN_SIGNS.some((sign) => sign.test(text));
+  if (keyWords.some((word) => PROSE_KEY_WORDS.has(word))) return true;
+  if (MARKDOWN_LINK.test(text)) return true;
+  return MARKDOWN_SIGNS.filter((sign) => sign.test(text)).length >= 2;
 }

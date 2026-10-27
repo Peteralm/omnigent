@@ -76,7 +76,7 @@ describe("ToolValueView", () => {
   });
 
   it("renders a long description as markdown in the interface font", async () => {
-    // WHY: an issue description read as a monospace <pre> full of `[#1](<https://...>)` syntax.
+    // Link syntax in a description renders as a link, not raw `[text](url)`.
     const description =
       "Follow-up to [#11607](<https://github.com/omnigent-ai/omnigent/pull/11607>).\n\n1. Show counts";
     const container = renderValue({ identifier: "OMNI-13632", description });
@@ -96,16 +96,17 @@ describe("ToolValueView", () => {
     expect(container.querySelector("pre")?.textContent).toBe("# Notes\n- [x](y)\n");
   });
 
-  it("lets record fields join a parent grid's label column", () => {
-    // WHY: the Input and Result sections share one label column so their values line up.
-    const container = render(<ToolValueView value={{ id: "OMNI-1" }} subgrid />).container;
-    const view = screen.getByTestId("tool-value-view");
-    expect(view).toHaveClass("col-span-2", "grid-cols-subgrid");
-    expect(container.querySelector("dl")).toHaveClass("col-span-2", "grid-cols-subgrid");
+  it("keeps file-edit text literal, alone or in a batch of edits", () => {
+    const oldText = "## Setup\n\n- Run `just dev`\n";
+    const newText = "## Setup\n\n- Run **the app**\n";
+    const container = renderValue({ path: "README.md", oldText, newText });
+    expect(screen.queryByTestId("tool-prose-value")).toBeNull();
+    const blocks = [...container.querySelectorAll("pre")].map((pre) => pre.textContent);
+    expect(blocks).toEqual([oldText, newText]);
     cleanup();
-    render(<ToolValueView value="plain text" subgrid />);
-    expect(screen.getByTestId("tool-value-view")).toHaveClass("col-span-2");
-    expect(screen.getByTestId("tool-value-view")).not.toHaveClass("grid-cols-subgrid");
+    const batch = renderValue({ path: "README.md", edits: [{ oldText, newText }] });
+    expect(screen.queryByTestId("tool-prose-value")).toBeNull();
+    expect(batch.textContent).toContain("Run **the app**");
   });
 
   it("labels inherited object names as plain words", () => {

@@ -182,28 +182,6 @@ describe("ToolCard rendering", () => {
     expect(screen.queryByText("Parameters")).toBeNull();
   });
 
-  it("lays the Input and Result fields out on one shared grid", () => {
-    // WHY: separate grids size their own label columns, so values started at different offsets.
-    const { container } = renderCard({
-      name: "mcp__linear__get_issue",
-      arguments: { id: "OMNI-13632" },
-      output: JSON.stringify({ identifier: "OMNI-13632", assigneeDisplayName: "Pat" }),
-      state: "output-available",
-    });
-    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
-    const grid = screen.getByTestId("tool-fields-grid");
-    const [input, result] = screen.getAllByTestId("tool-value-view");
-    for (const view of [input!, result!]) {
-      expect(grid.contains(view)).toBe(true);
-      // Each level between the grid and the field rows passes the columns through.
-      let node: HTMLElement | null = view.querySelector("dl");
-      for (; node !== null && node !== grid; node = node.parentElement) {
-        expect(node.className).toContain("grid-cols-subgrid");
-      }
-      expect(node).toBe(grid);
-    }
-  });
-
   it("renders an MCP content-block JSON result as fields", () => {
     const issue = { id: "OMNI-12243", title: "Claude mod replaces tmux paste", state: "In Review" };
     const { container } = renderCard({

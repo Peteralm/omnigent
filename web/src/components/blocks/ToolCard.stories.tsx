@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userEvent, within } from "storybook/test";
 import { writeTerminalThemeMode } from "@/lib/terminalThemePreferences";
+import { StoryQueryRouter } from "@/storybook/StoryProviders";
 import { ToolCard } from "./ToolCard";
 
 const longOutput = Array.from(
@@ -139,9 +139,9 @@ export const McpJsonResultExpanded: Story = {
   // Markdown links check workspace files through React Query, as in the app.
   decorators: [
     (Story) => (
-      <QueryClientProvider client={new QueryClient()}>
+      <StoryQueryRouter>
         <Story />
-      </QueryClientProvider>
+      </StoryQueryRouter>
     ),
   ],
   play: async ({ canvasElement }) => expand(canvasElement),

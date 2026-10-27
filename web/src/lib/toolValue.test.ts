@@ -157,25 +157,44 @@ describe("isProseText", () => {
   it("treats a description-like field as prose", () => {
     expect(isProseText("Line one\nline two", "description")).toBe(true);
     expect(isProseText("Fix the bug\n\nDetails here", "commitMessage")).toBe(true);
+    expect(isProseText("Use `Array<T>` here\nand there", "notes")).toBe(true);
   });
 
-  it("keeps source, commands and data in the code face", () => {
+  it("keeps source, commands, edits and output in the code face", () => {
     // WHY: a file's content or a script must keep its exact layout, even if it holds `# comments`.
     expect(isProseText("# Title\n- item", "content")).toBe(false);
     expect(isProseText("- a\n- b", "new_string")).toBe(false);
     expect(isProseText("SELECT *\nFROM t", "sql")).toBe(false);
+    for (const key of ["oldText", "newText", "old_str", "new_str", "file_text", "output", "log"]) {
+      expect(isProseText("## Setup\n\n- Run **the app**\n", key)).toBe(false);
+    }
+  });
+
+  it("keeps data, markup and stack traces literal under a prose field name", () => {
+    expect(isProseText('{\n  "error": "bad"\n}', "body")).toBe(false);
+    expect(isProseText("<html>\n<body>Hi</body>\n</html>", "body")).toBe(false);
+    expect(isProseText("Follow these.\n<instructions>\nBe brief\n</instructions>", "prompt")).toBe(
+      false,
+    );
+    expect(isProseText("TypeError: x\n    at f (a.js:1)\n    at g (b.js:2)", "message")).toBe(
+      false,
+    );
   });
 
   it("reads markdown under an unknown field name as prose", () => {
     expect(isProseText(description, "text")).toBe(true);
-    expect(isProseText("Intro\n\n- first\n- second")).toBe(true);
-    expect(isProseText("See **this** part\nand more")).toBe(true);
+    expect(isProseText("[#11607](https://x/pull/11607) follow-up\nmore", "text")).toBe(true);
+    expect(isProseText("# Plan\n\n- first\n- second")).toBe(true);
+    expect(isProseText("See **this** part\n- and more")).toBe(true);
   });
 
-  it("does not read plain text, code or JSON as markdown", () => {
+  it("does not read plain text, code, logs or JSON as markdown", () => {
     expect(isProseText("line one\nline two")).toBe(false);
+    expect(isProseText("# install deps\npip install x\n# run\nmake")).toBe(false);
+    expect(isProseText("Collected 3 items\n- a passed\n- b passed")).toBe(false);
     expect(isProseText("function f() {\n  return 1;\n}\n# not a heading")).toBe(false);
     expect(isProseText('{\n  "a": "[x](y)"\n}')).toBe(false);
+    expect(isProseText('["a", "[x](y)"]')).toBe(false);
     expect(isProseText("def f():\n    return 1\n    # [x](y)")).toBe(false);
   });
 });

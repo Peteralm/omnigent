@@ -194,6 +194,11 @@ describe("formatToolTitle", () => {
     expect(formatToolTitle("search_records", { query: "x", selectColumns: ["a", "b"] }).body).toBe(
       "x",
     );
+    expect(formatToolTitle("get_issue", { issue: "OMNI-1", fields: "summary,status" }).body).toBe(
+      "OMNI-1",
+    );
+    // `include` names what the call is about (a path glob), not which fields come back.
+    expect(formatToolTitle("search_code", { include: ["src/**/*.ts"] }).body).toBe("src/**/*.ts");
     // A formatter for a built-in name does not apply to another server's tool.
     expect(formatToolTitle("mcp__search__web_search", { query: "x" }).verb).toBe("Web search");
   });
