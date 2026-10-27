@@ -36,7 +36,6 @@ import { BRAND_HARNESSES } from "@/components/onboarding/harnessBrand";
 import {
   HARNESS_CREDENTIAL_COPY,
   harnessInstallableOnHost,
-  harnessReadinessOnHost,
   harnessWarningBadgeText,
   missingHarnessCredentialCopy,
   type HarnessCredentialKind,
@@ -44,8 +43,13 @@ import {
 import { NATIVE_CODING_AGENTS } from "@/lib/nativeCodingAgents";
 import { harnessAccountKey } from "@/lib/nativeHarnessModes";
 import { BackButton, HarnessCatalog } from "./HarnessCatalog";
-import { HarnessFixDialog, type HarnessFixMode } from "./HarnessFixDialog";
-import { applyHarnessFixResult, harnessFixMode } from "@/lib/harnessFix";
+import { HarnessFixDialog } from "./HarnessFixDialog";
+import {
+  applyHarnessFixResult,
+  harnessFixMode,
+  harnessStatus,
+  type HarnessFixMode,
+} from "@/lib/harnessFix";
 import { useSettingsRoute } from "../../shell/settingsNav";
 
 interface HarnessEntry {
@@ -369,22 +373,6 @@ function HostSelect({
       </DropdownMenu>
     </div>
   );
-}
-
-/** Readiness of *harness* on *host*, reduced to what the grid and details show. */
-function harnessStatus(harness: string, host: Host | null) {
-  const readiness = harnessReadinessOnHost(harness, host);
-  return {
-    ready: readiness.state === "available" && readiness.reason === "ready",
-    // Only "setup-required" / "broken" are actionable. A host that reports no
-    // readiness (older host → `readiness-unknown`) stays neutral: no badge, no
-    // Set-up button, rather than a false "needs setup" on a working harness.
-    needsSetup: readiness.state === "setup-required" || readiness.state === "broken",
-    reason:
-      readiness.reason === "ready" || readiness.reason === "readiness-unknown"
-        ? null
-        : readiness.reason,
-  };
 }
 
 function credentialPresentation(

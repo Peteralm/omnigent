@@ -83,6 +83,9 @@ vi.mock("@/pages/settings/HarnessFixDialog", () => ({
         >
           Finish harness setup
         </button>
+        <button type="button" onClick={() => props.onOpenChange(false)}>
+          Cancel
+        </button>
       </div>
     );
   },
@@ -7000,9 +7003,54 @@ describe("NewChatLandingScreen", () => {
       testAgent("alias", "codex-native-ui", { display_name: "Codex", harness: "codex" }),
     ]);
     renderLanding({ harness_install_enabled: true });
-    breakSelectedHarness("alias", "codex", "needs-auth");
+    breakSelectedHarness("alias", "codex-native", "binary-missing");
     fireEvent.click(screen.getByTestId("new-chat-landing-harness-setup"));
-    expect(fixDialogProps?.harness).toBe("codex-native");
+    expect(fixDialogProps).toMatchObject({ harness: "codex-native", mode: "install" });
+  });
+
+  it("uses the native display name for a custom agent's repair", () => {
+    mockAgents([
+      testAgent("custom", "my-bot", { display_name: "My Bot", harness: "codex-native" }),
+    ]);
+    renderLanding({ harness_install_enabled: true });
+    breakSelectedHarness("custom", "codex-native", "needs-auth");
+    fireEvent.click(screen.getByTestId("new-chat-landing-harness-setup"));
+    expect(fixDialogProps?.harnessLabel).toBe("Codex");
+  });
+
+  it("keeps the setup checklist for an SDK Claude agent needing authentication", () => {
+    mockAgents([testAgent("sdk", "claude", { display_name: "Claude SDK", harness: "claude" })]);
+    renderLanding({ harness_install_enabled: true });
+    mockHosts([{ ...host("online"), configured_harnesses: { claude: "needs-auth" } } as Host]);
+    fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
+      target: { value: "SDK setup" },
+    });
+    fireEvent.click(screen.getByTestId("new-chat-landing-harness-setup"));
+    expect(screen.queryByTestId("new-chat-fix-dialog")).toBeNull();
+    expect(screen.getByTestId("harness-setup-dialog")).toBeVisible();
+  });
+
+  it("keeps the setup checklist when an older host reports no readiness for the harness", () => {
+    renderLanding({ harness_install_enabled: true });
+    selectAgent("a2");
+    mockHosts([{ ...host("online"), configured_harnesses: { "claude-native": true } } as Host]);
+    fireEvent.change(screen.getByTestId("new-chat-landing-input"), {
+      target: { value: "Unknown readiness" },
+    });
+    fireEvent.click(screen.getByTestId("new-chat-landing-harness-setup"));
+    expect(screen.queryByTestId("new-chat-fix-dialog")).toBeNull();
+    expect(screen.getByTestId("harness-setup-dialog")).toBeVisible();
+  });
+
+  it("keeps the notice after Cancel and reopens repair from Set up", () => {
+    renderLanding({ harness_install_enabled: true });
+    breakSelectedHarness("a2", "codex-native", "needs-auth");
+    fireEvent.click(screen.getByTestId("new-chat-landing-harness-setup"));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByTestId("new-chat-fix-dialog")).toBeNull();
+    expect(screen.getByTestId("new-chat-landing-harness-warning")).toBeVisible();
+    fireEvent.click(screen.getByTestId("new-chat-landing-harness-setup"));
+    expect(screen.getByTestId("new-chat-fix-dialog")).toBeVisible();
   });
 
   it("refreshes readiness and preserves the draft after repair succeeds", async () => {
