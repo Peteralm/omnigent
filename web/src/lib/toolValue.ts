@@ -310,8 +310,6 @@ const CODE_KEY_WORDS = new Set([
 ]);
 // File-edit payloads (`oldText`, `file_text`) whose words alone are too generic to exclude.
 const CODE_KEYS = new Set(["file text", "new text", "old text"]);
-// Openings of JSON (`{`, `["a"`, `[1`) and of XML declarations, not of a `[link](url)`.
-const DATA_START = /^\s*(?:\{|\[\s*[[{"\d\]-]|<[!?])/;
 // A markup tag such as `<instructions>`, which markdown would hide; autolinks do not match.
 const MARKUP_TAG = /<\/?[A-Za-z][\w-]*(?:\s[^<>\n]*)?\/?>/;
 const MARKDOWN_LINK = /\[[^\]\n]+\]\(\S+\)/;
@@ -322,6 +320,21 @@ const MARKDOWN_SIGNS = [
   /\*\*\S[^*\n]*\*\*/, // bold
 ];
 
+// JSON or an XML declaration, but not prose opening with `[link](url)` or `[1] See`.
+function looksLikeData(text: string): boolean {
+  const start = text.trimStart();
+  if (/^(?:\{|<[!?])/.test(start)) return true;
+  if (!start.startsWith("[")) return false;
+  // `[{`, `["`, `[[` and `[]` open an array even when the text is cut off.
+  if (/^\[\s*[[{"\]]/.test(start)) return true;
+  try {
+    JSON.parse(start);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Whether a long string reads as prose rather than code or data. Code-like field
 // names, data, markup and indented code stay literal; then a prose field name, a
 // markdown link or two kinds of markdown syntax mark prose.
@@ -329,10 +342,16 @@ export function isProseText(text: string, key?: string): boolean {
   const keyWords = key === undefined ? [] : identifierWords(key);
   if (keyWords.some((word) => CODE_KEY_WORDS.has(word))) return false;
   if (CODE_KEYS.has(keyWords.join(" "))) return false;
-  if (DATA_START.test(text)) return false;
-  if (MARKUP_TAG.test(text.replace(/`[^`\n]*`/g, ""))) return false;
-  const lines = text.split("\n").filter((line) => line.trim().length > 0);
-  const codeLike = lines.filter((line) => /^(?:\t| {4})|[;{}]\s*$/.test(line)).length;
+  if (looksLikeData(text)) return false;
+  // Fenced and inline code render literally as markdown too, so only the rest is checked.
+  const outsideCode = text
+    .replace(/^```[^\n]*\n[\s\S]*?^```[ \t]*$/gm, "")
+    .replace(/`[^`\n]*`/g, "");
+  if (MARKUP_TAG.test(outsideCode)) return false;
+  const lines = outsideCode.split("\n").filter((line) => line.trim().length > 0);
+  const codeLike = lines.filter(
+    (line) => !/^\s+(?:[-*+]|\d+\.) /.test(line) && /^(?:\t| {4})|[;{}]\s*$/.test(line),
+  ).length;
   if (codeLike * 4 > lines.length) return false;
   if (keyWords.some((word) => PROSE_KEY_WORDS.has(word))) return true;
   if (MARKDOWN_LINK.test(text)) return true;

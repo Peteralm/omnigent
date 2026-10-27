@@ -197,7 +197,7 @@ function ProseValue({ text }: { text: string }) {
       className="max-h-60 overflow-auto rounded-md border bg-muted/30 px-2.5 py-1.5"
       data-testid="tool-prose-value"
     >
-      <FilePathAwareMessageResponse breaks className={PROSE_MARKDOWN_CLASS}>
+      <FilePathAwareMessageResponse mode="static" breaks className={PROSE_MARKDOWN_CLASS}>
         {text}
       </FilePathAwareMessageResponse>
     </div>

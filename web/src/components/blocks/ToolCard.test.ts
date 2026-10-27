@@ -171,6 +171,8 @@ describe("ToolCard rendering", () => {
     // Raw panels keep the section names from the Fields view.
     expect(screen.getByText("Input")).toBeInTheDocument();
     expect(screen.getByText("Result")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy input" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy result" })).toBeInTheDocument();
     expect(screen.queryByText("Parameters")).toBeNull();
     expect(screen.queryByText("Output")).toBeNull();
     expect(container.textContent).toContain('"includeComments": false');
@@ -462,9 +464,13 @@ describe("ToolCard shell terminal panel", () => {
       state: "output-available",
     });
     expand(container);
+    // The terminal keeps its own copy control, named for the command's output.
+    expect(screen.getByRole("button", { name: "Copy output" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Raw" }));
     expect(screen.getByText("Input")).toBeInTheDocument();
     expect(screen.getByText("Result")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy input" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy result" })).toBeInTheDocument();
     expect(screen.queryByText("Parameters")).toBeNull();
     expect(container.textContent).toContain("\\u001b[1ma.txt\\u001b[0m");
   });

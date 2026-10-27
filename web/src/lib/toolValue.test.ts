@@ -158,6 +158,10 @@ describe("isProseText", () => {
     expect(isProseText("Line one\nline two", "description")).toBe(true);
     expect(isProseText("Fix the bug\n\nDetails here", "commitMessage")).toBe(true);
     expect(isProseText("Use `Array<T>` here\nand there", "notes")).toBe(true);
+    expect(isProseText("[1] See the RFC.\n\nMore notes", "description")).toBe(true);
+    const withSample =
+      "Steps:\n\n- Build\n    - web\n    - server\n- Ship\n\n```ts\nconst a = 1;\nif (a) {\n  run();\n}\n```\n";
+    expect(isProseText(withSample, "description")).toBe(true);
   });
 
   it("keeps source, commands, edits and output in the code face", () => {
@@ -172,6 +176,8 @@ describe("isProseText", () => {
 
   it("keeps data, markup and stack traces literal under a prose field name", () => {
     expect(isProseText('{\n  "error": "bad"\n}', "body")).toBe(false);
+    expect(isProseText("[\n  true,\n  false\n]", "body")).toBe(false);
+    expect(isProseText("[null, 1]\n", "body")).toBe(false);
     expect(isProseText("<html>\n<body>Hi</body>\n</html>", "body")).toBe(false);
     expect(isProseText("Follow these.\n<instructions>\nBe brief\n</instructions>", "prompt")).toBe(
       false,

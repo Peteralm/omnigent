@@ -85,7 +85,7 @@ describe("ToolValueView", () => {
     expect(prose.contains(link)).toBe(true);
     expect(link).toHaveAttribute("href", "https://github.com/omnigent-ai/omnigent/pull/11607");
     expect(prose.textContent).not.toContain("](");
-    expect(prose).not.toHaveClass("font-mono");
+    expect(prose.querySelector(".font-mono, pre, code")).toBeNull();
     expect(container.querySelector("pre")).toBeNull();
   });
 
@@ -94,6 +94,27 @@ describe("ToolValueView", () => {
     expect(screen.queryByTestId("tool-prose-value")).toBeNull();
     expect(container.querySelector("pre")).toHaveClass("font-mono");
     expect(container.querySelector("pre")?.textContent).toBe("# Notes\n- [x](y)\n");
+  });
+
+  it("shows finished prose as sent, without closing unmatched markdown", async () => {
+    const description = "Search with the glob **/*.ts\nthen [open the PR](https://x/pull/1)";
+    renderValue({ description });
+    const prose = screen.getByTestId("tool-prose-value");
+    await screen.findByRole("link", { name: "open the PR" });
+    expect(prose.textContent).toContain("**/*.ts");
+    expect(prose.querySelector("strong")).toBeNull();
+  });
+
+  it("renders untrusted links and markup in tool text inertly", async () => {
+    renderValue({
+      description: "See [docs](https://x/docs) or [this](javascript:alert(1))\nfor more",
+      notes: 'Look <img src="x" onerror="alert(1)">\nhere',
+    });
+    await screen.findByRole("link", { name: "docs" });
+    const hrefs = [...document.querySelectorAll("a")].map((link) => link.getAttribute("href"));
+    expect(hrefs.some((href) => href?.toLowerCase().startsWith("javascript:"))).toBe(false);
+    expect(document.querySelector("img")).toBeNull();
+    expect(document.querySelector("pre")?.textContent).toContain("onerror");
   });
 
   it("keeps file-edit text literal, alone or in a batch of edits", () => {
