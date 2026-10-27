@@ -110,6 +110,8 @@ function patchChangesDiff(changes: unknown): FileEditDiff | null {
       else removals += body.length;
     } else {
       body = unifiedDiffBody(diff);
+      // An empty add or delete still changes a file; an empty in-place update does not.
+      if (body.length === 0 && newPath === change.path) continue;
       for (const line of body) {
         if (line.startsWith("+")) additions += 1;
         else if (line.startsWith("-")) removals += 1;

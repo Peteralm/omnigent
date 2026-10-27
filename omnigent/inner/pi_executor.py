@@ -1460,11 +1460,13 @@ def _failed_tool_output(result: JsonValue) -> str:
     if isinstance(content, str):
         text = content
     elif isinstance(content, list):
-        text = "".join(
+        texts = [
             item["text"]
             for item in content
             if isinstance(item, dict) and isinstance(item.get("text"), str)
-        ) or json.dumps(result)
+        ]
+        # Images or other non-text blocks stay in the serialized result.
+        text = "".join(texts) if texts and len(texts) == len(content) else json.dumps(result)
     else:
         text = json.dumps(result)
     return text if _ERROR_LEAD_RE.match(text) else f"Error: {text}"

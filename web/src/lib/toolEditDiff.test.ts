@@ -139,6 +139,18 @@ describe("getFileEditDiff", () => {
     );
   });
 
+  it("does not count an update that changes nothing as one of the patch's files", () => {
+    const diff = getFileEditDiff("apply_patch", {
+      changes: [
+        { path: "a.py", kind: { type: "add" }, diff: "x\n" },
+        { path: "b.py", kind: { type: "update" }, diff: "--- a/b.py\n+++ b/b.py\n" },
+        { path: "empty.py", kind: { type: "add" }, diff: "" },
+      ],
+    });
+    expect(diff).toMatchObject({ additions: 1, removals: 0, fileCount: 2 });
+    expect(diff?.text).toBe("--- a.py\n+++ a.py\n+x\n--- empty.py\n+++ empty.py");
+  });
+
   it("names a renamed file's destination, even when its content is unchanged", () => {
     const moved = getFileEditDiff("apply_patch", {
       changes: [

@@ -2759,11 +2759,14 @@ class TestRunTurn(unittest.TestCase):
             self.assertEqual(tool_completes[0].result, output)
 
         text_blocks = {"content": [{"type": "text", "text": "Something broke"}]}
-        image_only = {"content": [{"type": "image", "data": "aGk=", "mimeType": "image/png"}]}
+        image = {"type": "image", "data": "aGk=", "mimeType": "image/png"}
+        image_only = {"content": [image]}
+        text_and_image = {"content": [*text_blocks["content"], image]}
         for result, error_text, output in (
             ("Something broke", "Something broke", "Error: Something broke"),
             (text_blocks, "Something broke", "Error: Something broke"),
             (image_only, "image/png", f"Error: {json.dumps(image_only)}"),
+            (text_and_image, "Something broke", f"Error: {json.dumps(text_and_image)}"),
         ):
             with self.subTest(result=result):
                 _run(_test(result, error_text, output))

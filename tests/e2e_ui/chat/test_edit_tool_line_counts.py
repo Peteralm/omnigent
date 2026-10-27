@@ -109,9 +109,11 @@ def edit_session(
         )
         yield (live_server, session_id, workspace)
     finally:
-        if session_id is not None:
-            httpx.delete(f"{live_server}/v1/sessions/{session_id}", timeout=10.0)
-        shutil.rmtree(workspace, ignore_errors=True)
+        try:
+            if session_id is not None:
+                httpx.delete(f"{live_server}/v1/sessions/{session_id}", timeout=10.0)
+        finally:
+            shutil.rmtree(workspace, ignore_errors=True)
 
 
 _VIEWPORT = {"width": 1280, "height": 720}
