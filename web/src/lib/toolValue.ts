@@ -300,25 +300,56 @@ const CODE_KEY_WORDS = new Set([
 // GitHub bodies' `<details>`, `<summary>` and `<br>` render as markdown and do not count.
 const MARKUP_TAG = /<\/?(?!(?:details|summary|br|sub|sup|kbd)\b)[A-Za-z][\w-]*(?:\s[^<>\n]*)?\/?>/i;
 
-// `text` without its closed code fences, in one pass; an unclosed fence stays.
-// A fence may be indented under a list item and closes on a run at least as long.
-function withoutFencedCode(text: string): string {
+// Indentation, `>` quote markers and list bullets that can nest a block in a line.
+const CONTAINER_PREFIX = /^(?:[ \t>]|(?:[-*+]|\d{1,9}[.)])[ \t])*/;
+// A fence indented at most three spaces; a deeper one is code or nested in a list.
+const PLAIN_FENCE = /^( {0,3})(`{3,}|~{3,})(.*)$/;
+
+// `text` without the code markdown renders literally, in one pass: closed fences and code
+// spans outside HTML blocks. A fence markdown may read differently keeps the rest.
+function withoutCode(text: string): string {
+  const lines = text.split("\n");
   const kept: string[] = [];
-  let fence: { start: number; marker: string } | null = null;
-  for (const line of text.split("\n")) {
-    const marker = /^[ \t]*(`{3,}|~{3,})/.exec(line)?.[1];
-    if (fence === null && marker !== undefined) fence = { start: kept.length, marker };
-    else if (
-      fence !== null &&
-      marker?.[0] === fence.marker[0] &&
-      marker.length >= fence.marker.length &&
-      line.trim() === marker
-    ) {
-      kept.length = fence.start;
-      fence = null;
-      continue;
+  let fence: { start: number; indent: string; marker: string } | null = null;
+  // What ends the HTML block in progress, in which fences and code spans are raw HTML.
+  let htmlBlockEnd: "blank line" | "-->" | null = null;
+  for (const [index, line] of lines.entries()) {
+    const content = line.replace(CONTAINER_PREFIX, "");
+    const fenceLike = /^(?:`{3}|~{3})/.test(content);
+    const [, indent = "", marker = "", info = ""] = PLAIN_FENCE.exec(line) ?? [];
+    // A nested fence, one in an HTML block or with a backtick in its info may not be a fence.
+    // In a list item's fence, a shallower line ends the item and a deeper marker may close it.
+    const unclear =
+      fence === null
+        ? fenceLike &&
+          (htmlBlockEnd !== null || marker === "" || (marker[0] === "`" && info.includes("`")))
+        : fence.indent !== "" &&
+          ((line.trim() !== "" && !line.startsWith(fence.indent)) || (fenceLike && marker === ""));
+    if (unclear) return [...kept, ...lines.slice(index)].join("\n");
+    if (fence !== null) {
+      if (
+        marker[0] === fence.marker[0] &&
+        marker.length >= fence.marker.length &&
+        info.trim() === ""
+      ) {
+        kept.length = fence.start;
+        fence = null;
+        continue;
+      }
+      kept.push(line);
+    } else if (fenceLike) {
+      fence = { start: kept.length, indent, marker };
+      kept.push(line);
+    } else if (htmlBlockEnd !== null) {
+      if (htmlBlockEnd === "-->" ? line.includes("-->") : line.trim() === "") htmlBlockEnd = null;
+      kept.push(line);
+    } else if (content.startsWith("<")) {
+      const comment = content.startsWith("<!--");
+      htmlBlockEnd = !comment ? "blank line" : content.includes("-->", 4) ? null : "-->";
+      kept.push(line);
+    } else {
+      kept.push(line.replace(/`[^`]*`/g, ""));
     }
-    kept.push(line);
   }
   return kept.join("\n");
 }
@@ -359,7 +390,7 @@ export function isProseText(text: string, key?: string): boolean {
   if (keyWords.some((word) => hasKeyWord(CODE_KEY_WORDS, word))) return false;
   if (isPathologicalText(text) || looksLikeData(text)) return false;
   // Fenced and inline code render literally as markdown too, so only the rest is checked.
-  const outsideCode = withoutHtmlComments(withoutFencedCode(text).replace(/`[^`\n]*`/g, ""));
+  const outsideCode = withoutHtmlComments(withoutCode(text));
   // An unclosed `<!--` hides the rest of the text, like a markup tag.
   if (MARKUP_TAG.test(outsideCode) || outsideCode.includes("<!--")) return false;
   const lines = outsideCode.split("\n").filter((line) => line.trim().length > 0);

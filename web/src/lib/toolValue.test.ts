@@ -170,6 +170,8 @@ describe("isProseText", () => {
       "<!-- Describe your change -->\n## Summary\n\n- Fix it<br>today\n\n" +
       "<details><summary>Logs</summary>\n\nAll green\n</details>\n";
     expect(isProseText(templatedBody, "body")).toBe(true);
+    const detailsSample = "<details><summary>Logs</summary>\n\n```\n<main>\n```\n</details>";
+    expect(isProseText(detailsSample, "body")).toBe(true);
   });
 
   it("keeps markdown under any other field name literal", () => {
@@ -197,6 +199,16 @@ describe("isProseText", () => {
       isProseText("Follow these.\n<instructions>\nBe brief\n</instructions>", "description"),
     ).toBe(false);
     expect(isProseText("Intro\n<!-- draft\nHidden by the comment", "description")).toBe(false);
+    // Markdown reads these as text or raw HTML rather than code, so their markup counts.
+    for (const unclearCode of [
+      "Intro\n\n    ```\n<!--\n    ```\nHidden remainder",
+      "Intro\n\n```a`b\n<!--\n```\nHidden remainder",
+      "Steps\n\n- Item\n  ```\n  code\n```\n```\n<instructions>\n```",
+      "<details>\n```\n<instructions>\n```\n</details>",
+      "<details>\n<summary>Logs</summary>\nUse `<Button>` here\n</details>",
+    ]) {
+      expect(isProseText(unclearCode, "description")).toBe(false);
+    }
     expect(isProseText("TypeError: x\n    at f (a.js:1)\n    at g (b.js:2)", "comment")).toBe(
       false,
     );
