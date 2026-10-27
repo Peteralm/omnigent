@@ -156,6 +156,7 @@ describe("isProseText", () => {
     expect(isProseText("Fix the bug\n\nDetails here", "pr_body")).toBe(true);
     expect(isProseText("Use `Array<T>` here\nand there", "notes")).toBe(true);
     expect(isProseText("Looks good\nShip it", "comments")).toBe(true);
+    expect(isProseText("Faster builds\nSmaller bundles", "releaseNote")).toBe(true);
     expect(isProseText("[1] See the RFC.\n\nMore notes", "summary")).toBe(true);
     const withSample =
       "Steps:\n\n- Build\n    - web\n    - server\n- Ship\n\n```ts\nconst a = 1;\nif (a) {\n  run();\n}\n```\n";
@@ -195,6 +196,7 @@ describe("isProseText", () => {
     expect(
       isProseText("Follow these.\n<instructions>\nBe brief\n</instructions>", "description"),
     ).toBe(false);
+    expect(isProseText("Intro\n<!-- draft\nHidden by the comment", "description")).toBe(false);
     expect(isProseText("TypeError: x\n    at f (a.js:1)\n    at g (b.js:2)", "comment")).toBe(
       false,
     );
@@ -214,7 +216,7 @@ describe("isProseText", () => {
     const started = performance.now();
     expect(isProseText("```a\n".repeat(9_000), "description")).toBe(true);
     expect(isProseText("a <b ".repeat(9_000), "description")).toBe(true);
-    expect(isProseText("<!--a\n".repeat(8_000), "description")).toBe(true);
+    expect(isProseText("<!--a\n".repeat(8_000), "description")).toBe(false);
     expect(performance.now() - started).toBeLessThan(2_000);
   });
 });

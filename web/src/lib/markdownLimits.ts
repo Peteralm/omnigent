@@ -1,15 +1,7 @@
-// Defense-in-depth against a pathological text block locking the tab.
-// A user message whose text is a ~50KB unbroken base64 data URL
-// — e.g. an image block accidentally serialized into the text stream — both
-// jams the full markdown pipeline (Shiki/KaTeX/mermaid + rehype) on the main
-// thread AND forces the browser to lay out one ~50K-char line with no break
-// opportunities. Either heuristic below routes such a block to plain,
-// break-anywhere rendering that bypasses markdown entirely.
-//
-// `MAX_MARKDOWN_TEXT_LENGTH`: total size above which we never run markdown.
-// `MAX_UNBROKEN_TOKEN_LENGTH`: longest run of non-whitespace chars above which
-//   layout becomes pathological regardless of total size (base64, long URLs).
+// Huge text, such as a base64 data URL in a message, stalls the markdown pipeline
+// and layout on the main thread, so it renders as plain, break-anywhere text.
 const MAX_MARKDOWN_TEXT_LENGTH = 50_000;
+// A longer non-whitespace run has no line breaks, whatever the total size.
 const MAX_UNBROKEN_TOKEN_LENGTH = 5_000;
 
 /**

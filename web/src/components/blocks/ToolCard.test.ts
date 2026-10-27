@@ -471,7 +471,7 @@ describe("ToolCard shell terminal panel", () => {
     expect(terminal.textContent).toContain("pnpm install");
     expect(terminal.textContent).not.toContain("zsh -lc");
     expect(terminal.textContent).toContain("Done in 1.2s");
-    expect(screen.queryByText("Parameters")).toBeNull();
+    expect(screen.queryByText("Input")).toBeNull();
   });
 
   it("reveals the raw parameters and untouched output on demand", () => {

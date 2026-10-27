@@ -266,7 +266,7 @@ export function isoTimestampMs(text: string): number | null {
 }
 
 // The only field names whose text renders as markdown (an issue description, a PR body).
-const PROSE_KEY_WORDS = new Set(["body", "comment", "description", "notes", "summary"]);
+const PROSE_KEY_WORDS = new Set(["body", "comment", "description", "note", "summary"]);
 // Field names whose text is source, a command, output or data, which must keep its exact layout.
 const CODE_KEY_WORDS = new Set([
   "cmd",
@@ -360,7 +360,8 @@ export function isProseText(text: string, key?: string): boolean {
   if (isPathologicalText(text) || looksLikeData(text)) return false;
   // Fenced and inline code render literally as markdown too, so only the rest is checked.
   const outsideCode = withoutHtmlComments(withoutFencedCode(text).replace(/`[^`\n]*`/g, ""));
-  if (MARKUP_TAG.test(outsideCode)) return false;
+  // An unclosed `<!--` hides the rest of the text, like a markup tag.
+  if (MARKUP_TAG.test(outsideCode) || outsideCode.includes("<!--")) return false;
   const lines = outsideCode.split("\n").filter((line) => line.trim().length > 0);
   const codeLike = lines.filter(
     (line) => !/^\s+(?:[-*+]|\d+\.) /.test(line) && /^(?:\t| {4})|[;{}]\s*$/.test(line),
