@@ -1,6 +1,7 @@
 // One-line outcome shown under a tool call's row, so a collapsed transcript
 // reads as "did X, got Y" and failures are visible without expanding.
 
+import { stripAnsi } from "@/lib/ansi";
 import type { ToolState } from "@/lib/renderItems";
 import { type ShellToolOutput, parseShellToolOutput } from "@/lib/shellToolOutput";
 import { shellToolCall, stripOmnigentPrefix, toolCallCategory } from "@/lib/toolTitle";
@@ -45,6 +46,10 @@ export interface ToolResultSegment {
 // Codex patch output leads with its outcome. Older output reads the same whether
 // or not the patch applied, so it gets no counts.
 const CODEX_PATCH_APPLIED = "File change applied.";
+// First lines of each harness's successful edit: Claude and Qwen, Claude
+// MultiEdit, Omnigent's built-in Edit, Pi, OpenCode, and a new Qwen file.
+const EDIT_APPLIED_RE =
+  /^(?:The file:? .+ has been updated|Applied \d+ edits? to |Replaced \d+ occurrence|Successfully replaced |Edit applied successfully|Created new file: )/;
 const SUMMARY_MAX_CHARS = 300;
 const FIELD_SUMMARY_PARTS = 2;
 const FILE_SEARCH_TOOLS = new Set(["Grep", "Glob", "grep", "glob"]);
@@ -92,10 +97,7 @@ export function summarizeFileEdit(call: ToolCall): ToolResultSummary | null {
   if (call.state !== "output-available" || call.output === null) return generic;
   const error = editErrorMessage(call.output);
   if (error !== null) return failure(firstLine(error));
-  const appliedUnknown =
-    stripOmnigentPrefix(call.name) === "apply_patch" &&
-    firstLine(call.output) !== CODEX_PATCH_APPLIED;
-  if (appliedUnknown) return generic;
+  if (!editApplied(call.name, call.output)) return generic;
   const diff = getFileEditDiff(call.name, call.args);
   if (diff === null || diff.additions + diff.removals === 0) return generic;
   const counts: ToolResultSegment[] = [];
@@ -111,6 +113,22 @@ export function summarizeFileEdit(call: ToolCall): ToolResultSummary | null {
     segments.push(count);
   });
   return { text: segments.map((segment) => segment.text).join(""), isError: false, segments };
+}
+
+/**
+ * Whether an edit's output says the change applied. Failures can lack a
+ * recognized error prefix, so counts need this positive evidence.
+ */
+export function editApplied(name: string, output: string): boolean {
+  const parsed = parseToolOutput(output);
+  const tool = stripOmnigentPrefix(name);
+  if (tool === "apply_patch") return firstLine(parsed.text) === CODEX_PATCH_APPLIED;
+  if (tool === "sys_os_edit") {
+    const record = parsed.kind === "json" && isRecord(parsed.value) ? parsed.value : null;
+    const replacements = record?.replacements;
+    return typeof replacements === "number" && replacements > 0;
+  }
+  return EDIT_APPLIED_RE.test(stripAnsi(parsed.text).trim());
 }
 
 function summarizeShellResult(result: ShellToolOutput): ToolResultSummary | null {

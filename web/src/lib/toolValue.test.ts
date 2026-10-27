@@ -131,7 +131,7 @@ describe("editErrorMessage", () => {
     },
   );
 
-  it("is not applied to other tools' output", () => {
+  it('matches "[error]" only on the edit path, not in toolErrorMessage', () => {
     const output = "[error] recovered cache entry";
     expect(editErrorMessage(output)).toBe("recovered cache entry");
     expect(toolErrorMessage(parseToolOutput(output))).toBeNull();

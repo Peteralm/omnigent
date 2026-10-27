@@ -88,6 +88,17 @@ describe("getFileEditDiff", () => {
     expect(diff).toMatchObject({ additions: 501, removals: 501 });
   });
 
+  it("shares the comparison budget across a call's edits", () => {
+    const shared = Array.from({ length: 399 }, (_, index) => `line ${index}`);
+    const pair = {
+      old_string: [...shared, "old end"].join("\n"),
+      new_string: ["new start", ...shared].join("\n"),
+    };
+    // Each 400 × 400 edit fits the budget alone; the second exceeds what the first left.
+    const diff = getFileEditDiff("MultiEdit", { file_path: "a.py", edits: [pair, pair] });
+    expect(diff).toMatchObject({ additions: 1 + 400, removals: 1 + 400 });
+  });
+
   it("returns null for a no-op, malformed, or non-edit call", () => {
     expect(getFileEditDiff("Edit", { old_string: "same", new_string: "same" })).toBeNull();
     expect(getFileEditDiff("Edit", { file_path: "a.py" })).toBeNull();

@@ -438,41 +438,45 @@ async function testFailedToolResultIsMarkedInTranscript() {
     String(url).endsWith("/policies/evaluate")
       ? { ok: true, status: 200, text: async () => '{"result":"POLICY_ACTION_ALLOW"}' }
       : captureFetch(url, opts);
-  const ctx = makeCtx({ idle: false });
-  await h.handlers.session_start({}, ctx);
-  await h.handlers.agent_start({}, ctx);
-  const results = [
-    ["failed", true, "Could not find the exact text in a.py."],
-    ["prefixed", true, "Error: Permission denied"],
-    ["applied", false, "Successfully replaced text in a.py."],
-  ];
-  for (const [id, isError, text] of results) {
-    await h.handlers.tool_call(
-      { toolCallId: id, toolName: "edit", input: { path: "a.py", oldText: "x", newText: "y" } },
-      ctx,
-    );
-    await h.handlers.tool_execution_end(
-      { toolCallId: id, toolName: "edit", isError, result: { content: [{ type: "text", text }] } },
-      ctx,
-    );
-  }
-  const outputs = {};
-  for (let attempt = 0; attempt < 50 && Object.keys(outputs).length < 3; attempt += 1) {
-    await sleep(20);
-    for (const event of h.postedEvents) {
-      const data = event && event.type === "external_conversation_item" ? event.data : null;
-      if (data && data.item_type === "function_call_output") {
-        outputs[data.item_data.call_id] = data.item_data.output;
+  try {
+    const ctx = makeCtx({ idle: false });
+    await h.handlers.session_start({}, ctx);
+    await h.handlers.agent_start({}, ctx);
+    const results = [
+      ["failed", true, "Could not find the exact text in a.py."],
+      ["prefixed", true, "Error: Permission denied"],
+      ["applied", false, "Successfully replaced text in a.py."],
+    ];
+    for (const [id, isError, text] of results) {
+      await h.handlers.tool_call(
+        { toolCallId: id, toolName: "edit", input: { path: "a.py", oldText: "x", newText: "y" } },
+        ctx,
+      );
+      await h.handlers.tool_execution_end(
+        { toolCallId: id, toolName: "edit", isError, result: { content: [{ type: "text", text }] } },
+        ctx,
+      );
+    }
+    const outputs = {};
+    for (let attempt = 0; attempt < 50 && Object.keys(outputs).length < 3; attempt += 1) {
+      await sleep(20);
+      for (const event of h.postedEvents) {
+        const data = event && event.type === "external_conversation_item" ? event.data : null;
+        if (data && data.item_type === "function_call_output") {
+          outputs[data.item_data.call_id] = data.item_data.output;
+        }
       }
     }
+    assert(
+      "a failed tool result starts with Error: in the transcript",
+      outputs.failed === "Error: Could not find the exact text in a.py." &&
+        outputs.prefixed === "Error: Permission denied" &&
+        outputs.applied === "Successfully replaced text in a.py.",
+      JSON.stringify(outputs),
+    );
+  } finally {
+    global.fetch = captureFetch;
   }
-  assert(
-    "a failed tool result starts with Error: in the transcript",
-    outputs.failed === "Error: Could not find the exact text in a.py." &&
-      outputs.prefixed === "Error: Permission denied" &&
-      outputs.applied === "Successfully replaced text in a.py.",
-    JSON.stringify(outputs),
-  );
 }
 
 // The web store only clears its local "streaming" flag when a turn's `idle`

@@ -506,6 +506,23 @@ describe("ToolCard registered views", () => {
     },
   );
 
+  it("shows output that does not confirm the edit above its diff, with no counts", async () => {
+    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
+    registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+    const output = "Error reading /repo/missing.py: [Errno 2] No such file or directory";
+    const { container } = renderCard({
+      name: "Edit",
+      arguments: { file_path: "/repo/missing.py", old_string: "x", new_string: "y" },
+      output,
+      state: "output-available",
+    });
+    expect(screen.queryByTestId("tool-result-line")).toBeNull();
+    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+    const text = container.textContent ?? "";
+    expect(text).toContain(output);
+    expect(text.indexOf(output)).toBeLessThan(text.indexOf("+y"));
+  });
+
   it.each([
     ["input-available", "Waiting for output"],
     ["cancelled", "Tool was cancelled before output arrived."],

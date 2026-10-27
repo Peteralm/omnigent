@@ -32,8 +32,8 @@ const GAP: DiffLine = { kind: "gap", text: "" };
 
 /** Unchanged lines kept around each change. */
 const CONTEXT_LINES = 2;
-// A larger changed region is shown as a whole-block replacement; the
-// line-by-line comparison costs old × new steps.
+// Line-by-line comparison costs old × new steps, shared by all of a call's
+// edits; a changed region past the remaining budget is a whole-block replacement.
 const MAX_LINE_DIFF_CELLS = 250_000;
 
 /** Claude `Edit`/`MultiEdit`, Omnigent `sys_os_edit`, Pi and OpenCode `edit`. */
@@ -70,7 +70,8 @@ function editPairs(args: Record<string, unknown>): EditPair[] {
 }
 
 function pairsDiff(pairs: EditPair[]): FileEditDiff | null {
-  const hunks = pairs.map((pair) => lineDiff(...pairLines(pair)));
+  const budget = { cells: MAX_LINE_DIFF_CELLS };
+  const hunks = pairs.map((pair) => lineDiff(...pairLines(pair), budget));
   const changed = hunks.filter((hunk) => hunk.some((line) => line.kind !== "context"));
   if (changed.length === 0) return null;
   const lines = changed.flatMap((hunk) => (changed.length > 1 ? [GAP, ...hunk] : hunk));
@@ -161,8 +162,13 @@ function pairLines(pair: EditPair): [string[], string[]] {
   return [oldLines, newLines];
 }
 
+/** Comparison steps a call's remaining edits may still use. */
+interface DiffBudget {
+  cells: number;
+}
+
 /** Line diff of a replacement, trimmed to the changes and their nearby context. */
-function lineDiff(oldLines: string[], newLines: string[]): DiffLine[] {
+function lineDiff(oldLines: string[], newLines: string[], budget: DiffBudget): DiffLine[] {
   let start = 0;
   while (
     start < oldLines.length &&
@@ -177,7 +183,7 @@ function lineDiff(oldLines: string[], newLines: string[]): DiffLine[] {
     oldEnd -= 1;
     newEnd -= 1;
   }
-  const middle = middleDiff(oldLines.slice(start, oldEnd), newLines.slice(start, newEnd));
+  const middle = middleDiff(oldLines.slice(start, oldEnd), newLines.slice(start, newEnd), budget);
   const context = (lines: string[]): DiffLine[] => lines.map((text) => ({ kind: "context", text }));
   return [
     ...context(oldLines.slice(Math.max(0, start - CONTEXT_LINES), start)),
@@ -187,12 +193,14 @@ function lineDiff(oldLines: string[], newLines: string[]): DiffLine[] {
 }
 
 /** Longest-common-subsequence diff of the changed region. */
-function middleDiff(oldLines: string[], newLines: string[]): DiffLine[] {
+function middleDiff(oldLines: string[], newLines: string[], budget: DiffBudget): DiffLine[] {
   const replaceAll = (): DiffLine[] => [
     ...oldLines.map((text): DiffLine => ({ kind: "removed", text })),
     ...newLines.map((text): DiffLine => ({ kind: "added", text })),
   ];
-  if (oldLines.length * newLines.length > MAX_LINE_DIFF_CELLS) return replaceAll();
+  const cells = oldLines.length * newLines.length;
+  if (cells > budget.cells) return replaceAll();
+  budget.cells -= cells;
   const width = newLines.length + 1;
   // common[i * width + j]: LCS length of oldLines[i:] and newLines[j:].
   const common = new Uint32Array((oldLines.length + 1) * width);

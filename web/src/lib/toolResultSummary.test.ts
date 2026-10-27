@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { absoluteTime } from "./relativeTime";
-import { type ToolCall, summarizeFileEdit, summarizeToolResult } from "./toolResultSummary";
+import {
+  type ToolCall,
+  editApplied,
+  summarizeFileEdit,
+  summarizeToolResult,
+} from "./toolResultSummary";
 
 function summarize(name: string, output: string | null, args: Record<string, unknown> = {}) {
   const call: ToolCall = { name, args, output, state: "output-available" };
@@ -179,6 +184,10 @@ describe("summarizeFileEdit", () => {
       state: "output-available",
     };
     expect(summarizeFileEdit(call)?.text).toBe("Updated 2 files with 3 additions");
+    const wrapped = JSON.stringify([{ type: "text", text: call.output }]);
+    expect(summarizeFileEdit({ ...call, output: wrapped })?.text).toBe(
+      "Updated 2 files with 3 additions",
+    );
   });
 
   it("keeps the error line for a failed edit", () => {
@@ -219,10 +228,25 @@ describe("summarizeFileEdit", () => {
     },
   );
 
-  it("marks a replace-all edit's counts as a lower bound", () => {
-    const replaceAll = edit("ok", {
-      args: { file_path: "a.py", old_string: "x", new_string: "y", replace_all: true },
+  it.each([
+    ["Edit", "Error reading /repo/missing.py: [Errno 2] No such file or directory"],
+    ["edit", "Could not find the exact text in a.py."],
+  ])("shows no counts for %s output that does not say it applied: %j", (name, output) => {
+    // Unrecognized failures, such as Pi output recorded before it gained an Error: prefix.
+    const call = edit(output, {
+      name,
+      args: { path: "a.py", oldText: "x", newText: "y", old_string: "x", new_string: "y" },
     });
+    expect(summarizeFileEdit(call)).toBeNull();
+  });
+
+  it("marks a replace-all edit's counts as a lower bound", () => {
+    const replaceAll = edit(
+      "The file a.py has been updated. All occurrences were successfully replaced.",
+      {
+        args: { file_path: "a.py", old_string: "x", new_string: "y", replace_all: true },
+      },
+    );
     expect(summarizeFileEdit(replaceAll)?.text).toBe(
       "Updated with at least 1 addition and 1 removal",
     );
@@ -245,5 +269,34 @@ describe("summarizeFileEdit", () => {
     expect(summarizeFileEdit(edit(null, { state: "cancelled" }))).toBeNull();
     expect(summarizeFileEdit(edit("done", { state: "output-error" }))).toBeNull();
     expect(summarizeFileEdit(edit("done", { args: { file_path: "a.py" } }))).toBeNull();
+  });
+});
+
+describe("editApplied", () => {
+  it.each([
+    ["Edit", "The file /repo/a.py has been updated successfully."],
+    ["Edit", "The file /repo/a.py has been updated. All occurrences were successfully replaced."],
+    ["Edit", "Replaced 1 occurrence(s) in /repo/a.py"],
+    ["MultiEdit", "Applied 2 edits to /repo/a.py:\n1. Replaced ..."],
+    ["edit", "Successfully replaced 1 block(s) in a.py."],
+    ["edit", "Successfully replaced text in a.py."],
+    ["edit", "Edit applied successfully.\n\nLSP errors detected"],
+    ["edit", "The file: /repo/a.py has been updated."],
+    ["edit", "Created new file: /repo/a.py with provided content."],
+    ["mcp__omnigent__sys_os_edit", '{"path": "/repo/a.py", "replacements": 1, "bytes_written": 9}'],
+    ["apply_patch", "File change applied.\nupdate /repo/a.py"],
+  ])("accepts %s output %j", (name, output) => {
+    expect(editApplied(name, output)).toBe(true);
+  });
+
+  it.each([
+    ["Edit", "ok"],
+    ["edit", "Could not find the exact text in a.py."],
+    ["sys_os_edit", '{"path": "/repo/a.py", "replacements": 0}'],
+    ["sys_os_edit", "Replaced 1 occurrence(s) in /repo/a.py"],
+    ["apply_patch", "update /repo/a.py"],
+    ["apply_patch", "Successfully replaced text in a.py."],
+  ])("rejects %s output %j", (name, output) => {
+    expect(editApplied(name, output)).toBe(false);
   });
 });

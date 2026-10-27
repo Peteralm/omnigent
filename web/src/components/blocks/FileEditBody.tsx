@@ -1,9 +1,9 @@
 // Expanded view of a file-edit tool call: the change as a diff, with the
-// tool's reported failure above it.
+// tool's reported failure, or output that does not confirm the edit, above it.
 
 import { useMemo } from "react";
 import { getFileEditDiff } from "@/lib/toolEditDiff";
-import type { ToolCall } from "@/lib/toolResultSummary";
+import { type ToolCall, editApplied } from "@/lib/toolResultSummary";
 import { editErrorMessage } from "@/lib/toolValue";
 import { CodePanel } from "./ToolCodePanel";
 import { ToolValueView } from "./ToolValueView";
@@ -21,6 +21,18 @@ export function FileEditBody({ call }: { call: ToolCall }) {
     const failure = state === "output-error" ? output.trim() || EMPTY_FAILURE : null;
     return editErrorMessage(output) ?? failure;
   }, [output, state]);
+  // The diff is what was requested; show output that does not say it applied.
+  const unconfirmed =
+    output !== null && error === null && output.trim() !== "" && !editApplied(name, output);
+  const outputPanel = output !== null && (
+    <CodePanel
+      title="Output"
+      text={output}
+      copyText={output}
+      copyLabel="Copy output"
+      language="text"
+    />
+  );
   return (
     <div className="space-y-2">
       {error !== null && (
@@ -34,24 +46,19 @@ export function FileEditBody({ call }: { call: ToolCall }) {
             <p className="text-muted-foreground text-sm">No diff recorded for this edit.</p>
           )}
           {Object.keys(args).length > 0 && <ToolValueView value={args} />}
-          {output !== null && error === null && output.trim() !== "" && (
-            <CodePanel
-              title="Output"
-              text={output}
-              copyText={output}
-              copyLabel="Copy output"
-              language="text"
-            />
-          )}
+          {output !== null && error === null && output.trim() !== "" && outputPanel}
         </>
       ) : (
-        <CodePanel
-          title="Diff"
-          text={diff.text}
-          copyText={diff.text}
-          copyLabel="Copy diff"
-          language="diff"
-        />
+        <>
+          {unconfirmed && outputPanel}
+          <CodePanel
+            title="Diff"
+            text={diff.text}
+            copyText={diff.text}
+            copyLabel="Copy diff"
+            language="diff"
+          />
+        </>
       )}
     </div>
   );
