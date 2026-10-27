@@ -5,7 +5,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { FileViewerContext } from "@/shell/FileViewerContext";
 import type { RenderItem } from "@/lib/renderItems";
 import { writeTerminalThemeMode } from "@/lib/terminalThemePreferences";
-import { ToolCard, ToolGroupSummary, formatToolDuration, getOutputPreview } from "./ToolCard";
+import { ToolCard, ToolGroupSummary, formatToolDuration } from "./ToolCard";
+import { getOutputPreview } from "./ToolCodePanel";
 import type * as ToolViewsModule from "./toolViews";
 import type { ToolView } from "./toolViews";
 
@@ -544,16 +545,21 @@ describe("ToolCard registered views", () => {
 
   it("shows a finished edit's output when its arguments give no diff", async () => {
     await registerRealView("apply_patch");
+    const files = Array.from({ length: 100 }, (_, index) => `M src/file${index}.py`);
     const { container } = renderCard({
       name: "apply_patch",
       arguments: {},
-      output: "Success. Updated the following files:\nM src/app.py",
+      output: `Success. Updated the following files:\n${files.join("\n")}`,
       state: "output-available",
     });
     fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
     expect(screen.getByText("No diff recorded for this edit.")).toBeInTheDocument();
     expect(screen.getByText("Output")).toBeInTheDocument();
-    expect(container.textContent).toContain("M src/app.py");
+    expect(container.textContent).toContain("M src/file0.py");
+    // Long output keeps the generic preview, with the rest behind Expand.
+    expect(container.textContent).not.toContain("M src/file99.py");
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    expect(container.textContent).toContain("M src/file99.py");
   });
 
   it("says a finished edit without output or a diff has no diff", async () => {

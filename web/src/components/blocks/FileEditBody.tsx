@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { getFileEditDiff } from "@/lib/toolEditDiff";
 import { type ToolCall, editApplied } from "@/lib/toolResultSummary";
 import { editErrorMessage } from "@/lib/toolValue";
-import { CodePanel } from "./ToolCodePanel";
+import { CodePanel, OutputSection, ToolErrorBox } from "./ToolCodePanel";
 import { ToolValueView } from "./ToolValueView";
 
 const EMPTY_FAILURE = "The edit failed with no output.";
@@ -24,22 +24,10 @@ export function FileEditBody({ call }: { call: ToolCall }) {
   // The diff is what was requested; show output that does not say it applied.
   const unconfirmed =
     output !== null && error === null && output.trim() !== "" && !editApplied(name, output);
-  const outputPanel = output !== null && (
-    <CodePanel
-      title="Output"
-      text={output}
-      copyText={output}
-      copyLabel="Copy output"
-      language="text"
-    />
-  );
+  const outputPanel = output !== null && <OutputSection output={output} language="text" />;
   return (
     <div className="space-y-2">
-      {error !== null && (
-        <div className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive text-sm">
-          {error}
-        </div>
-      )}
+      {error !== null && <ToolErrorBox>{error}</ToolErrorBox>}
       {diff === null ? (
         <>
           {!awaitingOutput && (
