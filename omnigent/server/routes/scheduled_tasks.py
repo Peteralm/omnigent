@@ -381,8 +381,12 @@ def create_scheduled_tasks_router(
         *,
         project_id: str | None,
         project_name: str | None,
-    ) -> tuple[str, bool]:
-        """Resolve a task's project to an id, and whether this call created it."""
+    ) -> str:
+        """Resolve a task's project to an id, creating a named one that is missing.
+
+        A created project is kept even if the task write then fails: another
+        request may already be using it, and a retry reuses it by name.
+        """
         if project_store is None:
             raise OmnigentError(
                 "projects are not available on this server", code=ErrorCode.NOT_FOUND
@@ -391,7 +395,7 @@ def create_scheduled_tasks_router(
             project = await asyncio.to_thread(project_store.get, project_id, user_id=project_owner)
             if project is None:
                 raise OmnigentError("Project not found", code=ErrorCode.NOT_FOUND)
-            return project.id, False
+            return project.id
         if project_name is None:
             raise OmnigentError(
                 "project_id or project_name is required",
@@ -400,15 +404,9 @@ def create_scheduled_tasks_router(
         project, created = await asyncio.to_thread(
             project_store.get_or_create_by_name, uuid.uuid4().hex, project_name, project_owner
         )
-        return project.id, created
-
-    def _discard_created_project(project_id: str, project_owner: str | None) -> None:
-        """Best-effort delete of a project made for a task write that then failed."""
-        try:
-            if project_store is not None:
-                project_store.delete(project_id, user_id=project_owner)
-        except Exception:
-            _logger.exception("could not delete unused project %s", project_id)
+        if created:
+            announce_projects_changed(project_owner)
+        return project.id
 
     async def _bind_agent(agent: Agent, owner_id: str | None) -> Agent:
         """A task runs another user's agent from its owner's own copy, taken now."""
@@ -462,11 +460,10 @@ def create_scheduled_tasks_router(
         project_owner = _project_owner(owner)
         bound = await _bind_agent(agent, owner_id)
         project_id: str | None = None
-        created_project = False
         try:
             # Resolved after validation so an invalid create makes no project.
             if body.project_id is not None or body.project_name is not None:
-                project_id, created_project = await _resolve_project(
+                project_id = await _resolve_project(
                     project_owner, project_id=body.project_id, project_name=body.project_name
                 )
             task = store.create(
@@ -489,8 +486,6 @@ def create_scheduled_tasks_router(
         except Exception as exc:
             if bound.id != agent.id:
                 agent_store.delete(bound.id)
-            if created_project and project_id is not None:
-                _discard_created_project(project_id, project_owner)
             if isinstance(exc, RRuleSearchError):
                 raise OmnigentError(
                     "Could not calculate the next run time for this schedule. "
@@ -498,8 +493,6 @@ def create_scheduled_tasks_router(
                     code=ErrorCode.INVALID_INPUT,
                 ) from exc
             raise
-        if created_project:
-            announce_projects_changed(project_owner)
         scheduler = _scheduler(request)
         if scheduler is not None and not getattr(
             request.app.state, "scheduled_task_dispatch_enabled", False
@@ -757,11 +750,10 @@ def create_scheduled_tasks_router(
                 fields["agent_id"] = bound.id
                 new_copy = bound if bound.id != agent.id else None
         project_owner = _project_owner(owner)
-        created_project = False
         try:
             # Resolved after validation so an invalid update makes no project.
             if project_name is not None or fields.get("project_id") is not None:
-                fields["project_id"], created_project = await _resolve_project(
+                fields["project_id"] = await _resolve_project(
                     project_owner, project_id=fields.get("project_id"), project_name=project_name
                 )
             updated = store.update(scheduled_task_id, **fields)
@@ -771,8 +763,6 @@ def create_scheduled_tasks_router(
             # The task never bound the copy, so nothing else uses it.
             if new_copy is not None:
                 agent_store.delete(new_copy.id)
-            if created_project:
-                _discard_created_project(fields["project_id"], project_owner)
             if isinstance(exc, RRuleSearchError):
                 raise OmnigentError(
                     "Could not calculate the next run time for this schedule. "
@@ -780,8 +770,6 @@ def create_scheduled_tasks_router(
                     code=ErrorCode.INVALID_INPUT,
                 ) from exc
             raise
-        if created_project:
-            announce_projects_changed(project_owner)
         scheduler = _scheduler(request)
         if scheduler is not None and not getattr(
             request.app.state, "scheduled_task_dispatch_enabled", False

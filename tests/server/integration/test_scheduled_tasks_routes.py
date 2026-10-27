@@ -679,10 +679,12 @@ async def test_update_moves_the_task_to_another_existing_project(
     assert sorted(p["name"] for p in projects) == ["first", "second"]
 
 
-async def test_failed_create_discards_the_project_it_made(
+async def test_failed_create_keeps_the_project_for_a_retry(
     auth_client: httpx.AsyncClient, db_uri: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A project is never rolled back, since another request may already use it."""
     _make_user(db_uri)
+    create = SqlAlchemyScheduledTaskStore.create
 
     def _fail(*args: object, **kwargs: object) -> None:
         raise RuntimeError("insert failed")
@@ -690,10 +692,31 @@ async def test_failed_create_discards_the_project_it_made(
     monkeypatch.setattr(SqlAlchemyScheduledTaskStore, "create", _fail)
     with pytest.raises(RuntimeError, match="insert failed"):
         await auth_client.post(
-            "/v1/scheduled-tasks", json=_create_body(project_name="orphan"), headers=_headers()
+            "/v1/scheduled-tasks", json=_create_body(project_name="retried"), headers=_headers()
         )
     projects = (await auth_client.get("/v1/projects", headers=_headers())).json()["data"]
-    assert "orphan" not in {p["name"] for p in projects}
+    [kept] = [p for p in projects if p["name"] == "retried"]
+
+    monkeypatch.setattr(SqlAlchemyScheduledTaskStore, "create", create)
+    retry = await auth_client.post(
+        "/v1/scheduled-tasks", json=_create_body(project_name="retried"), headers=_headers()
+    )
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["project_id"] == kept["id"]
+
+
+async def test_rejected_create_makes_no_project(
+    auth_client: httpx.AsyncClient, db_uri: str
+) -> None:
+    _make_user(db_uri)
+    rejected = await auth_client.post(
+        "/v1/scheduled-tasks",
+        json=_create_body(project_name="never", timezone="Not/AZone"),
+        headers=_headers(),
+    )
+    assert rejected.status_code == 400, rejected.text
+    projects = (await auth_client.get("/v1/projects", headers=_headers())).json()["data"]
+    assert "never" not in {p["name"] for p in projects}
 
 
 async def test_update_rejects_another_users_project(

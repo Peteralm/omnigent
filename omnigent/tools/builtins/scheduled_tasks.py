@@ -288,7 +288,7 @@ class SysScheduledTaskUpdateTool(Tool):
                             ),
                         },
                         "project_id": {
-                            "type": "string",
+                            "type": ["string", "null"],
                             "description": (
                                 "File future fired sessions into this existing project id. "
                                 "Null stops filing them into a project."

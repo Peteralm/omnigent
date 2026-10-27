@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 
+import jsonschema
 import pytest
 
 from omnigent.runner.tool_dispatch import (
@@ -23,6 +24,7 @@ from omnigent.runner.tool_dispatch import (
     _SCHEDULED_TASK_TOOLS,
     _execute_scheduled_task_tool,
 )
+from omnigent.tools.builtins.scheduled_tasks import SysScheduledTaskUpdateTool
 
 _ALL_NAMES = {
     "sys_scheduled_task_create",
@@ -159,6 +161,13 @@ async def test_update_forwards_agent_switch_cost_cap_and_project() -> None:
     )
     _, _, body = client.calls[0]
     assert body == {"agent_id": "ag_pi", "max_cost_usd": 2.5, "project_id": None}
+
+
+@pytest.mark.parametrize("project_id", ["0123456789abcdef0123456789abcdef", None])
+def test_update_schema_accepts_a_project_id_or_null(project_id: str | None) -> None:
+    """A schema-validating client can move a task's project or clear it with null."""
+    parameters = SysScheduledTaskUpdateTool().get_schema()["function"]["parameters"]
+    jsonschema.validate({"scheduled_task_id": _TASK_ID, "project_id": project_id}, parameters)
 
 
 @pytest.mark.asyncio

@@ -45,7 +45,7 @@ const PROJECTS = [
   { id: "proj_2", name: "Reports", icon: null },
 ];
 const projectsQuery = vi.hoisted(() => ({
-  current: { data: undefined as unknown, isPending: false },
+  current: { data: undefined as unknown, isPending: false, isSuccess: false, isError: false },
 }));
 vi.mock("@/hooks/useConversations", () => ({
   useProjects: () => projectsQuery.current,
@@ -157,7 +157,7 @@ const mutateAsync = vi.fn();
 const updateMutateAsync = vi.fn();
 
 beforeEach(() => {
-  projectsQuery.current = { data: PROJECTS, isPending: false };
+  projectsQuery.current = { data: PROJECTS, isPending: false, isSuccess: true, isError: false };
   mutateAsync.mockReset().mockResolvedValue({ id: "st_new" });
   updateMutateAsync.mockReset().mockResolvedValue({ id: "st_1" });
   vi.mocked(agentsHook.useAvailableAgents).mockReturnValue({
@@ -1063,9 +1063,18 @@ describe("CreateScheduledTaskDialog project", () => {
   });
 
   it("shows a loading label, not a deleted one, while projects load", async () => {
-    projectsQuery.current = { data: undefined, isPending: true };
+    projectsQuery.current = { data: undefined, isPending: true, isSuccess: false, isError: false };
     renderEditingFiledTask();
     expect(screen.getByTestId("task-project-trigger")).toHaveTextContent("Loading…");
+    openProjectMenu();
+    expect(await screen.findByLabelText("Search or create project")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "No project" })).not.toBeInTheDocument();
+  });
+
+  it("does not call a saved project deleted when the projects fail to load", async () => {
+    projectsQuery.current = { data: undefined, isPending: false, isSuccess: false, isError: true };
+    renderEditingFiledTask();
+    expect(screen.getByTestId("task-project-trigger")).toHaveTextContent("Project unavailable");
     openProjectMenu();
     expect(await screen.findByLabelText("Search or create project")).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "No project" })).not.toBeInTheDocument();

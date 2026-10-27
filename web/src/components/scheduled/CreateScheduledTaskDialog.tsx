@@ -77,7 +77,7 @@ export function CreateScheduledTaskDialog({
 }) {
   const { data: agents } = useAvailableAgents({ enabled: open });
   const { data: hosts } = useHosts({ enabled: open });
-  const { data: projects = [], isPending: projectsLoading } = useProjects();
+  const { data: projects = [], isSuccess: projectsLoaded, isError: projectsFailed } = useProjects();
   const info = useServerInfo();
   // Gates the "new sandbox each run" option: only servers that can actually
   // serve a managed launch advertise it (same flag New Chat's sandbox option
@@ -275,13 +275,16 @@ export function CreateScheduledTaskDialog({
     savedProjectId !== null ? projects.find((p) => p.id === savedProjectId)?.name : "";
   const projectName = projectChoice ?? savedProjectName ?? "";
   const projectIcon = projects.find((p) => p.name === projectName)?.icon;
-  // The saved project has no name while the list loads or once it is deleted.
+  // The saved project has no name while the list loads, if it fails to load,
+  // or once the project is deleted. Only a loaded list proves it is deleted.
   const savedProjectUnresolved = projectChoice === null && savedProjectName === undefined;
-  const savedProjectDeleted = savedProjectUnresolved && !projectsLoading;
+  const savedProjectDeleted = savedProjectUnresolved && projectsLoaded;
   const unresolvedProjectLabel = savedProjectUnresolved
     ? savedProjectDeleted
       ? "Deleted project"
-      : "Loading…"
+      : projectsFailed
+        ? "Project unavailable"
+        : "Loading…"
     : null;
 
   const hostOptions = hosts ?? [];
