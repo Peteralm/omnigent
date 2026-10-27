@@ -31,6 +31,7 @@ import { dropTrailingPartialEscape, showControlCharacters, stripAnsi } from "@/l
 import { type ShellOutputFormat, parseShellToolOutput } from "@/lib/shellToolOutput";
 import { terminalSurfaceStyle } from "@/lib/terminalPalette";
 import { iconForTool } from "@/lib/toolIcon";
+import { mcpServerDisplayName } from "@/lib/mcpServerName";
 import {
   type ToolCall,
   type ToolResultSummary,
@@ -549,7 +550,7 @@ function ToolTriggerRow({
             variant="outline"
             className="h-[1.15rem] shrink-0 rounded px-1 font-normal text-muted-foreground text-sm"
           >
-            {title.server}
+            {mcpServerDisplayName(title.server)}
           </Badge>
         )}
         {duration !== undefined && (
