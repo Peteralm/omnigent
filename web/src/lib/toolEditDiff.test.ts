@@ -13,6 +13,7 @@ describe("getFileEditDiff", () => {
       additions: 1,
       removals: 1,
       fileCount: 1,
+      countsAreMinimum: false,
     });
   });
 
@@ -43,6 +44,7 @@ describe("getFileEditDiff", () => {
       additions: 2,
       removals: 1,
       fileCount: 1,
+      countsAreMinimum: false,
     });
     const omnigentEdits = [{ oldText: "x = 1", newText: "x = 2" }];
     expect(
@@ -94,6 +96,46 @@ describe("getFileEditDiff", () => {
         "-gone",
       ].join("\n"),
     );
+  });
+
+  it("names a renamed file's destination, even when its content is unchanged", () => {
+    const moved = getFileEditDiff("apply_patch", {
+      changes: [
+        {
+          path: "/repo/old.py",
+          kind: { type: "update", move_path: "/repo/new.py" },
+          diff: "@@ -1 +1 @@\n-a\n+b\n",
+        },
+      ],
+    });
+    expect(moved?.text).toBe("--- /repo/old.py\n+++ /repo/new.py\n@@ -1 +1 @@\n-a\n+b");
+    const renamedOnly = getFileEditDiff("apply_patch", {
+      changes: [
+        { path: "/repo/a.py", kind: { type: "update", move_path: "/repo/b.py" }, diff: "" },
+      ],
+    });
+    expect(renamedOnly).toMatchObject({
+      text: "--- /repo/a.py\n+++ /repo/b.py",
+      additions: 0,
+      removals: 0,
+    });
+  });
+
+  it("flags replace-all edits, whose counts cover one match", () => {
+    expect(
+      getFileEditDiff("Edit", { old_string: "a", new_string: "b", replace_all: true }),
+    ).toMatchObject({ additions: 1, removals: 1, countsAreMinimum: true });
+    expect(
+      getFileEditDiff("MultiEdit", {
+        edits: [
+          { old_string: "a", new_string: "b" },
+          { old_string: "c", new_string: "d", replace_all: true },
+        ],
+      }),
+    ).toMatchObject({ countsAreMinimum: true });
+    expect(getFileEditDiff("Edit", { old_string: "a", new_string: "b" })).toMatchObject({
+      countsAreMinimum: false,
+    });
   });
 
   it("skips an update diff's own file headers when counting", () => {

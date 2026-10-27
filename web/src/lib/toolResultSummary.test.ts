@@ -191,6 +191,35 @@ describe("summarizeFileEdit", () => {
         state: "output-available",
       }),
     ).toEqual({ text: "Error: File change ended with status declined.", isError: true });
+    expect(
+      summarizeFileEdit({
+        name: "edit",
+        args: { filePath: "a.py", oldString: "x", newString: "y" },
+        output: "[error] Error: oldString not found in content",
+        state: "output-available",
+      }),
+    ).toEqual({ text: "Error: oldString not found in content", isError: true });
+  });
+
+  it("marks a replace-all edit's counts as a lower bound", () => {
+    const replaceAll = edit("ok", {
+      args: { file_path: "a.py", old_string: "x", new_string: "y", replace_all: true },
+    });
+    expect(summarizeFileEdit(replaceAll)?.text).toBe(
+      "Updated with at least 1 addition and 1 removal",
+    );
+  });
+
+  it("shows no counts for a patch that only renames a file", () => {
+    const call: ToolCall = {
+      name: "apply_patch",
+      args: {
+        changes: [{ path: "a.py", kind: { type: "update", move_path: "b.py" }, diff: "" }],
+      },
+      output: "update a.py",
+      state: "output-available",
+    };
+    expect(summarizeFileEdit(call)).toBeNull();
   });
 
   it("shows no counts while running, after a cancelled or failed turn, or without a change", () => {

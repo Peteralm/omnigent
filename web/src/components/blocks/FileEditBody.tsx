@@ -9,7 +9,9 @@ import { CodePanel } from "./ToolCodePanel";
 import { ToolValueView } from "./ToolValueView";
 
 export function FileEditBody({ call }: { call: ToolCall }) {
-  const { name, args, output } = call;
+  const { name, args, output, state } = call;
+  // Arguments may still be streaming in; the card shows the pending state below.
+  const running = output === null && state === "input-available";
   const diff = useMemo(() => getFileEditDiff(name, args), [name, args]);
   const error = useMemo(
     () => (output === null ? null : toolErrorMessage(parseToolOutput(output))),
@@ -24,7 +26,9 @@ export function FileEditBody({ call }: { call: ToolCall }) {
       )}
       {diff === null ? (
         <>
-          <p className="text-muted-foreground text-sm">No diff recorded for this edit.</p>
+          {!running && (
+            <p className="text-muted-foreground text-sm">No diff recorded for this edit.</p>
+          )}
           {Object.keys(args).length > 0 && <ToolValueView value={args} />}
         </>
       ) : (

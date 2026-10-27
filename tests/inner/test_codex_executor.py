@@ -2825,14 +2825,15 @@ def test_codex_builtin_command_completion_surfaces_nonzero_exit() -> None:
     assert completion.error == "Command exited with status 3."
 
 
-def test_codex_builtin_file_change_completion_marks_declined_patch_failed() -> None:
-    """A declined patch reads as a failure, not as the changes it listed."""
+@pytest.mark.parametrize("status", ["declined", "failed"])
+def test_codex_builtin_file_change_completion_marks_unapplied_patch_failed(status: str) -> None:
+    """An unapplied patch reads as a failure, not as the changes it listed."""
 
     completion = _codex_builtin_tool_completion(
         {
-            "id": "file-declined",
+            "id": "file-unapplied",
             "type": "fileChange",
-            "status": "declined",
+            "status": status,
             "changes": [
                 {"path": "/repo/app.py", "kind": {"type": "update"}, "diff": "@@\n-a\n+b"}
             ],
@@ -2841,10 +2842,10 @@ def test_codex_builtin_file_change_completion_marks_declined_patch_failed() -> N
 
     assert completion is not None
     assert completion.status is ToolCallStatus.ERROR
-    assert (
-        completion.result == "Error: File change ended with status declined.\nupdate /repo/app.py"
+    assert completion.result == (
+        f"Error: File change ended with status {status}.\nupdate /repo/app.py"
     )
-    assert completion.error == "File change ended with status declined."
+    assert completion.error == f"File change ended with status {status}."
 
 
 async def test_run_turn_refuses_to_adopt_stale_final_answer_event() -> None:

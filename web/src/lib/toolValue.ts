@@ -117,6 +117,8 @@ function contentBlockText(value: unknown): string | null {
 // "MCP error -32602: ...", "Error executing tool x: ...".
 const ERROR_TEXT_RE = /^(?:(?:error|fatal)\s*:|mcp error\b|error (?:executing|calling|running)\b)/i;
 const TOOL_USE_ERROR_RE = /^<tool_use_error>([\s\S]*?)(?:<\/tool_use_error>)?\s*$/;
+// OpenCode and the runtime's executor adapter report a failed call as "[error] <message>".
+const BRACKETED_ERROR_RE = /^\[error\](?:\s+([\s\S]*))?$/i;
 const UNNAMED_ERROR = "The tool reported an error.";
 
 /** The failure message a tool reported in its output, or `null` when it succeeded. */
@@ -132,6 +134,8 @@ export function toolErrorMessage(parsed: ParsedToolOutput): string | null {
   const text = stripAnsi(parsed.text).trim();
   const wrapped = TOOL_USE_ERROR_RE.exec(text);
   if (wrapped !== null) return nonEmpty(wrapped[1]!.trim()) ?? UNNAMED_ERROR;
+  const bracketed = BRACKETED_ERROR_RE.exec(text);
+  if (bracketed !== null) return nonEmpty(bracketed[1]?.trim()) ?? UNNAMED_ERROR;
   return ERROR_TEXT_RE.test(text) ? text : null;
 }
 

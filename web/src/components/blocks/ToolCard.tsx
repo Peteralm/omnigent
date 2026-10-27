@@ -299,7 +299,11 @@ function GenericToolBody({ call, duration, view: toolView }: ToolCardBodyProps) 
       </div>
       <TabsContent value="fields" className="space-y-2">
         {ViewBody !== undefined ? (
-          <ViewBody call={call} duration={duration} />
+          <>
+            <ViewBody call={call} duration={duration} />
+            {/* A view renders the output; a running, cancelled or failed call has none. */}
+            {output === null && hasResult && result}
+          </>
         ) : (
           <>
             {hasInput ? <ToolValueView value={args} /> : result}

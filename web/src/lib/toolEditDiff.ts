@@ -11,11 +11,14 @@ export interface FileEditDiff {
   removals: number;
   /** Files the edit touched. */
   fileCount: number;
+  /** A replace-all edit is diffed once, so its counts cover a single match. */
+  countsAreMinimum: boolean;
 }
 
 interface EditPair {
   oldText: string;
   newText: string;
+  replaceAll: boolean;
 }
 
 interface DiffLine {
@@ -56,7 +59,8 @@ function asPair(value: unknown): EditPair | null {
   const oldText = value.old_string ?? value.oldText ?? value.oldString;
   const newText = value.new_string ?? value.newText ?? value.newString;
   if (typeof oldText !== "string" || typeof newText !== "string") return null;
-  return oldText === newText ? null : { oldText, newText };
+  if (oldText === newText) return null;
+  return { oldText, newText, replaceAll: value.replace_all === true };
 }
 
 function editPairs(args: Record<string, unknown>): EditPair[] {
@@ -77,22 +81,27 @@ function pairsDiff(pairs: EditPair[]): FileEditDiff | null {
     additions: countKind(lines, "added"),
     removals: countKind(lines, "removed"),
     fileCount: 1,
+    countsAreMinimum: pairs.some((pair) => pair.replaceAll),
   };
 }
 
 /**
- * Codex `fileChange` entries: `{path, kind: {type}, diff}`, where `diff` is the
- * new file's content for `add`, the old content for `delete`, and a unified
- * diff for `update`.
+ * Codex `fileChange` entries: `{path, kind: {type, move_path?}, diff}`, where
+ * `diff` is the new file's content for `add`, the old content for `delete`, and
+ * a unified diff for `update`; `move_path` names a rename's destination.
  */
 function patchChangesDiff(changes: unknown): FileEditDiff | null {
   if (!Array.isArray(changes)) return null;
   const sections: string[] = [];
   let additions = 0;
   let removals = 0;
+  let renamed = false;
   for (const change of changes) {
     if (!isRecord(change) || typeof change.path !== "string") continue;
     const kind = isRecord(change.kind) ? change.kind.type : change.kind;
+    const movePath = isRecord(change.kind) ? (change.kind.move_path ?? change.kind.movePath) : null;
+    const newPath = typeof movePath === "string" && movePath !== "" ? movePath : change.path;
+    if (newPath !== change.path) renamed = true;
     const diff = typeof change.diff === "string" ? change.diff : "";
     let body: string[];
     if (kind === "add" || kind === "delete") {
@@ -107,10 +116,16 @@ function patchChangesDiff(changes: unknown): FileEditDiff | null {
         else if (line.startsWith("-")) removals += 1;
       }
     }
-    sections.push([`--- ${change.path}`, `+++ ${change.path}`, ...body].join("\n"));
+    sections.push([`--- ${change.path}`, `+++ ${newPath}`, ...body].join("\n"));
   }
-  if (sections.length === 0 || additions + removals === 0) return null;
-  return { text: sections.join("\n"), additions, removals, fileCount: sections.length };
+  if (sections.length === 0 || (additions + removals === 0 && !renamed)) return null;
+  return {
+    text: sections.join("\n"),
+    additions,
+    removals,
+    fileCount: sections.length,
+    countsAreMinimum: false,
+  };
 }
 
 /** A unified diff's hunk lines, without any `---`/`+++` file headers before the first hunk. */

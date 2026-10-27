@@ -463,6 +463,57 @@ describe("ToolCard registered views", () => {
     expect(container.textContent).toContain("+++ /repo/app.py");
   });
 
+  it("shows an OpenCode edit's bracketed error instead of line counts", async () => {
+    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
+    registeredViews.set("edit", actualViews.toolViewFor("edit")!);
+    const { container } = renderCard({
+      name: "edit",
+      arguments: { filePath: "a.py", oldString: "x", newString: "y" },
+      output: "[error] Error: oldString not found in content",
+      state: "output-available",
+    });
+    const line = screen.getByTestId("tool-result-line");
+    expect(line.textContent).toBe("Error: oldString not found in content");
+    expect(line).toHaveClass("text-destructive");
+    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+    expect(
+      screen.getByText("Error: oldString not found in content", { selector: "div" }),
+    ).toHaveClass("text-destructive");
+    expect(container.textContent).toContain("+y");
+  });
+
+  it.each([
+    ["input-available", "Waiting for output"],
+    ["cancelled", "Tool was cancelled before output arrived."],
+  ] as const)("keeps a %s edit's state under its diff", async (state, message) => {
+    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
+    registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+    const { container } = renderCard({
+      name: "Edit",
+      arguments: { file_path: "/repo/a.py", old_string: "a = 1", new_string: "a = 2" },
+      output: null,
+      state,
+    });
+    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+    expect(container.textContent).toContain("+a = 2");
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.queryByText("No diff recorded for this edit.")).toBeNull();
+  });
+
+  it("does not call a running edit's still-empty arguments a missing diff", async () => {
+    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
+    registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+    const { container } = renderCard({
+      name: "Edit",
+      arguments: { file_path: "/repo/a.py" },
+      output: null,
+      state: "input-available",
+    });
+    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+    expect(screen.queryByText("No diff recorded for this edit.")).toBeNull();
+    expect(screen.getByText("Waiting for output")).toBeInTheDocument();
+  });
+
   it("falls back to the generic parts a view leaves out", () => {
     registeredViews.set("fake_plan", { summary: () => null });
     const { container } = renderCard({
