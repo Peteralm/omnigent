@@ -264,21 +264,8 @@ export function isoTimestampMs(text: string): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-// Field names whose text is written for people (an issue description, a commit message).
-const PROSE_KEY_WORDS = new Set([
-  "body",
-  "comment",
-  "description",
-  "details",
-  "instructions",
-  "markdown",
-  "message",
-  "notes",
-  "plan",
-  "prompt",
-  "reason",
-  "summary",
-]);
+// The only field names whose text renders as markdown (an issue description, a PR body).
+const PROSE_KEY_WORDS = new Set(["body", "comment", "description", "notes", "summary"]);
 // Field names whose text is source, a command, output or data, which must keep its exact layout.
 const CODE_KEY_WORDS = new Set([
   "cmd",
@@ -308,23 +295,11 @@ const CODE_KEY_WORDS = new Set([
   "xml",
   "yaml",
 ]);
-// File-edit payloads (`oldText`, `file_text`) whose words alone are too generic to exclude.
-const CODE_KEYS = new Set(["file text", "new text", "old text"]);
 // A markup tag such as `<instructions>`, which markdown would hide; autolinks do not match.
 // GitHub bodies' `<details>`, `<summary>` and `<br>` render as markdown and do not count.
 const MARKUP_TAG = /<\/?(?!(?:details|summary|br|sub|sup|kbd)\b)[A-Za-z][\w-]*(?:\s[^<>\n]*)?\/?>/i;
-// A link to a URL, path or anchor; `handlers[key](event)` in code does not match.
-// Each part stops at the next bracket, so malformed links cannot backtrack across the text.
-const MARKDOWN_LINK =
-  /(?:^|[^\w\])])\[[^[\]\n]{1,500}\]\([^\s()[\]/#:]{0,2000}[/#:][^\s()[\]]{0,2000}\)/m;
 // The chat renderer shows longer text as plain text without parsing markdown.
 const PROSE_MAX_CHARS = 50_000;
-// Weak alone: a shell comment reads as a heading and log lines as list items.
-const MARKDOWN_SIGNS = [
-  /^#{1,6} \S/m, // heading
-  /^ {0,3}(?:[-*+]|\d+\.) \S/m, // list item
-  /\*\*\S[^*\n]*\*\*/, // bold
-];
 
 // `text` without its closed ``` fences, in one pass; an unclosed fence stays.
 function withoutFencedCode(text: string): string {
@@ -370,13 +345,12 @@ function looksLikeData(text: string): boolean {
   }
 }
 
-// Whether a long string reads as prose rather than code or data. Code-like field
-// names, data, markup and indented code stay literal; then a prose field name, a
-// markdown link or two kinds of markdown syntax mark prose.
+// Whether a long string is prose to render as markdown. Only a prose field name
+// marks prose, and code-like names, data, markup and indented code stay literal.
 export function isProseText(text: string, key?: string): boolean {
   const keyWords = key === undefined ? [] : identifierWords(key);
+  if (!keyWords.some((word) => hasKeyWord(PROSE_KEY_WORDS, word))) return false;
   if (keyWords.some((word) => hasKeyWord(CODE_KEY_WORDS, word))) return false;
-  if (CODE_KEYS.has(keyWords.join(" "))) return false;
   if (text.length > PROSE_MAX_CHARS || looksLikeData(text)) return false;
   // Fenced and inline code render literally as markdown too, so only the rest is checked.
   const outsideCode = withoutHtmlComments(withoutFencedCode(text).replace(/`[^`\n]*`/g, ""));
@@ -385,10 +359,7 @@ export function isProseText(text: string, key?: string): boolean {
   const codeLike = lines.filter(
     (line) => !/^\s+(?:[-*+]|\d+\.) /.test(line) && /^(?:\t| {4})|[;{}]\s*$/.test(line),
   ).length;
-  if (codeLike * 4 > lines.length) return false;
-  if (keyWords.some((word) => hasKeyWord(PROSE_KEY_WORDS, word))) return true;
-  if (MARKDOWN_LINK.test(outsideCode)) return true;
-  return MARKDOWN_SIGNS.filter((sign) => sign.test(outsideCode)).length >= 2;
+  return codeLike * 4 <= lines.length;
 }
 
 // A key word or its plural (`commands`, `patches`, `queries`) in `words`.

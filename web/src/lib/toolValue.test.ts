@@ -151,70 +151,49 @@ describe("isoTimestampMs", () => {
 });
 
 describe("isProseText", () => {
-  const description =
-    "Follow-up to [#11607](<https://github.com/o/r/pull/11607>).\n\n1. Show counts";
-
-  it("treats a description-like field as prose", () => {
+  it("treats a prose field as markdown", () => {
     expect(isProseText("Line one\nline two", "description")).toBe(true);
-    expect(isProseText("Fix the bug\n\nDetails here", "commitMessage")).toBe(true);
+    expect(isProseText("Fix the bug\n\nDetails here", "pr_body")).toBe(true);
     expect(isProseText("Use `Array<T>` here\nand there", "notes")).toBe(true);
-    expect(isProseText("[1] See the RFC.\n\nMore notes", "description")).toBe(true);
+    expect(isProseText("Looks good\nShip it", "comments")).toBe(true);
+    expect(isProseText("[1] See the RFC.\n\nMore notes", "summary")).toBe(true);
     const withSample =
       "Steps:\n\n- Build\n    - web\n    - server\n- Ship\n\n```ts\nconst a = 1;\nif (a) {\n  run();\n}\n```\n";
     expect(isProseText(withSample, "description")).toBe(true);
+    const templatedBody =
+      "<!-- Describe your change -->\n## Summary\n\n- Fix it<br>today\n\n" +
+      "<details><summary>Logs</summary>\n\nAll green\n</details>\n";
+    expect(isProseText(templatedBody, "body")).toBe(true);
   });
 
-  it("keeps source, commands, edits and output in the code face", () => {
-    // WHY: a file's content or a script must keep its exact layout, even if it holds `# comments`.
-    expect(isProseText("# Title\n- item", "content")).toBe(false);
-    expect(isProseText("- a\n- b", "new_string")).toBe(false);
-    expect(isProseText("SELECT *\nFROM t", "sql")).toBe(false);
-    for (const key of ["oldText", "newText", "old_str", "new_str", "file_text", "output", "log"]) {
-      expect(isProseText("## Setup\n\n- Run **the app**\n", key)).toBe(false);
+  it("keeps markdown under any other field name literal", () => {
+    // WHY: only a prose field name is a reliable sign; content sniffing misread code and output.
+    const markdown = "## Setup\n\n- Run **the app**\n- Read [the guide](docs/guide.md)\n";
+    expect(isProseText(markdown)).toBe(false);
+    for (const key of ["text", "prompt", "message", "instructions", "plan", "details", "reason"]) {
+      expect(isProseText(markdown, key)).toBe(false);
     }
-    for (const key of ["commands", "scripts", "patches", "queries", "diffs"]) {
-      expect(isProseText("## Setup\n\n- Run **the app**\n", key)).toBe(false);
+    for (const key of ["content", "new_string", "oldText", "file_text", "output", "commands"]) {
+      expect(isProseText(markdown, key)).toBe(false);
     }
   });
 
-  it("keeps data, markup and stack traces literal under a prose field name", () => {
+  it("keeps code, data, markup and stack traces literal under a prose field name", () => {
+    expect(isProseText("# Title\n- item", "body_html")).toBe(false);
+    expect(isProseText("- a\n- b", "summary_json")).toBe(false);
     expect(isProseText('{\n  "error": "bad"\n}', "body")).toBe(false);
     expect(isProseText("[\n  true,\n  false\n]", "body")).toBe(false);
     expect(isProseText("[null, 1]\n", "body")).toBe(false);
     expect(isProseText("<html>\n<body>Hi</body>\n</html>", "body")).toBe(false);
     expect(isProseText("<!DOCTYPE html>\n<p>Hi</p>", "body")).toBe(false);
     expect(isProseText('<?xml version="1.0"?>\n<a/>', "body")).toBe(false);
-    expect(isProseText("Follow these.\n<instructions>\nBe brief\n</instructions>", "prompt")).toBe(
+    expect(
+      isProseText("Follow these.\n<instructions>\nBe brief\n</instructions>", "description"),
+    ).toBe(false);
+    expect(isProseText("TypeError: x\n    at f (a.js:1)\n    at g (b.js:2)", "comment")).toBe(
       false,
     );
-    expect(isProseText("TypeError: x\n    at f (a.js:1)\n    at g (b.js:2)", "message")).toBe(
-      false,
-    );
-  });
-
-  it("reads markdown under an unknown field name as prose", () => {
-    expect(isProseText(description, "text")).toBe(true);
-    expect(isProseText("[#11607](https://x/pull/11607) follow-up\nmore", "text")).toBe(true);
-    expect(isProseText("# Plan\n\n- first\n- second")).toBe(true);
-    expect(isProseText("See **this** part\n- and more")).toBe(true);
-    expect(isProseText("Read [the guide](docs/guide.md)\nfirst")).toBe(true);
-    const templatedBody =
-      "<!-- Describe your change -->\n## Summary\n\n- Fix it<br>today\n\n" +
-      "<details><summary>Logs</summary>\n\nAll green\n</details>\n";
-    expect(isProseText(templatedBody, "body")).toBe(true);
-    expect(isProseText(templatedBody)).toBe(true);
-  });
-
-  it("does not read plain text, code, logs or JSON as markdown", () => {
-    expect(isProseText("line one\nline two")).toBe(false);
-    expect(isProseText("# install deps\npip install x\n# run\nmake")).toBe(false);
-    expect(isProseText("Collected 3 items\n- a passed\n- b passed")).toBe(false);
-    expect(isProseText("function f() {\n  return 1;\n}\n# not a heading")).toBe(false);
-    expect(isProseText('{\n  "a": "[x](y)"\n}')).toBe(false);
-    expect(isProseText('["a", "[x](y)"]')).toBe(false);
-    expect(isProseText("def f():\n    return 1\n    # [x](y)")).toBe(false);
-    expect(isProseText("result = handlers[key](arg)\nprint(result)", "input")).toBe(false);
-    expect(isProseText("Run `**a**` and `[x](https://y)`\n```\n# h\n- x\n```\n")).toBe(false);
+    expect(isProseText("function f() {\n  return 1;\n}\n# not a heading", "notes")).toBe(false);
   });
 
   it("leaves text past the chat's markdown limit literal", () => {
@@ -223,14 +202,13 @@ describe("isProseText", () => {
     expect(isProseText(prose.padEnd(50_001, "."), "description")).toBe(false);
   });
 
-  it("classifies malformed fences, links, brackets and comments in linear time", () => {
-    // Backtracking regexes took from half a second to ten seconds on these inputs; a linear
+  it("classifies unclosed fences, tags and comments in linear time", () => {
+    // Backtracking regexes took from half a second to ten seconds on such inputs; a linear
     // scan takes a few milliseconds, so the bound only catches that blow-up.
     const started = performance.now();
     expect(isProseText("```a\n".repeat(9_000), "description")).toBe(true);
-    expect(isProseText("a [".repeat(15_000), "text")).toBe(false);
-    expect(isProseText("[a](/".repeat(2_380), "text")).toBe(false);
-    expect(isProseText("<!--a\n".repeat(8_000), "text")).toBe(false);
+    expect(isProseText("a <b ".repeat(9_000), "description")).toBe(true);
+    expect(isProseText("<!--a\n".repeat(8_000), "description")).toBe(true);
     expect(performance.now() - started).toBeLessThan(500);
   });
 });

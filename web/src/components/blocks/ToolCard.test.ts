@@ -216,6 +216,21 @@ describe("ToolCard rendering", () => {
     expect(screen.getByRole("button", { name: "Expand" })).toBeInTheDocument();
   });
 
+  it("names a text result once in Fields and titles its panel in Raw", () => {
+    // WHY: the Result section label already names the panel, so a title would repeat it.
+    const { container } = renderCard({
+      name: "component_audit",
+      arguments: { mode: "visual" },
+      output: "line 1\nline 2",
+      state: "output-available",
+    });
+    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+    expect(screen.getAllByText("Result")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Copy result" })).toBeInTheDocument();
+    showView("Raw");
+    expect(screen.getAllByText("Result")).toHaveLength(1);
+  });
+
   it("shows a reported failure above the record's other fields", () => {
     // WHY: a partial failure still returns data; hiding it behind Raw loses the useful part.
     const { container } = renderCard({
@@ -259,7 +274,7 @@ describe("ToolCard rendering", () => {
       });
       fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
       expect(screen.queryByTestId("tool-value-view")).toBeNull();
-      expect(screen.getAllByText("Result").length).toBeGreaterThan(0);
+      expect(screen.getByRole("button", { name: "Copy result" })).toBeInTheDocument();
     } finally {
       spy.mockRestore();
     }

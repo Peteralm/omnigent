@@ -308,7 +308,11 @@ function GenericToolBody({ call, duration }: ToolBodyProps) {
       </TabsContent>
       <TabsContent value="raw" className="space-y-2">
         <CodePanel title="Input" text={inputJson} copyText={inputJson} copyLabel="Copy input" />
-        {output === null ? result : <OutputSection output={prettyPrintIfJson(output)} />}
+        {output === null ? (
+          result
+        ) : (
+          <OutputSection title="Result" output={prettyPrintIfJson(output)} />
+        )}
       </TabsContent>
     </Tabs>
   );
@@ -766,6 +770,7 @@ function ShellTerminalPanel({
           <CodePanel title="Input" text={inputJson} copyText={inputJson} copyLabel="Copy input" />
           {rawOutput !== null && (
             <OutputSection
+              title="Result"
               output={rawOutput}
               language={outputFormat === "sys-os-json" ? "json" : "text"}
             />
@@ -865,7 +870,7 @@ function CodePanel({
   copyLabel,
   language = "json",
 }: {
-  title: string;
+  title?: string;
   text: string;
   copyText: string;
   copyLabel: string;
@@ -879,7 +884,7 @@ function CodePanel({
     <CodeBlock code={text} language={language} wrap={wrap}>
       <CodeBlockHeader>
         <CodeBlockTitle className="min-w-0">
-          <span className="truncate font-medium">{title}</span>
+          {title !== undefined && <span className="truncate font-medium">{title}</span>}
         </CodeBlockTitle>
         <CodeBlockActions>
           <WrapTextButton onToggle={() => setWrap((value) => !value)} wrap={wrap} />
@@ -915,13 +920,16 @@ function WrapTextButton({ wrap, onToggle }: { wrap: boolean; onToggle: () => voi
 
 function OutputSection({
   output,
+  title,
   renderPanel,
   language,
 }: {
   output: string;
-  /** Renders the (possibly truncated) text; defaults to a titled Result panel. */
+  /** The default panel's title; the Fields view leaves it out, since its section label names it. */
+  title?: string;
+  /** Renders the (possibly truncated) text; defaults to a code panel. */
   renderPanel?: (text: string) => ReactNode;
-  /** Highlighting for the default Result panel; JSON unless set. */
+  /** Highlighting for the default panel; JSON unless set. */
   language?: CodeLanguage;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -945,7 +953,7 @@ function OutputSection({
           renderPanel(preview.text)
         ) : (
           <CodePanel
-            title="Result"
+            title={title}
             text={preview.text}
             copyText={output}
             copyLabel="Copy result"
