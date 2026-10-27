@@ -62,7 +62,12 @@ def _stub_host_workspace_validation(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _build_app(
-    db_uri: str, tmp_path: Path, *, persistent: bool = False, local_single_user: bool = False
+    db_uri: str,
+    tmp_path: Path,
+    *,
+    persistent: bool = False,
+    local_single_user: bool = False,
+    projects: bool = True,
 ) -> FastAPI:
     from omnigent.server.auth import UnifiedAuthProvider
     from omnigent.stores.host_store import HostStore
@@ -80,7 +85,7 @@ def _build_app(
         # ownership) resolves against actual host rows. Without it,
         # ``app.state.host_store`` is None and the route skips the check.
         host_store=HostStore(db_uri),
-        project_store=SqlAlchemyProjectStore(db_uri),
+        project_store=SqlAlchemyProjectStore(db_uri) if projects else None,
         auth_provider=UnifiedAuthProvider(source="header", local_single_user=local_single_user),
         feature_flags=resolve_feature_flags(
             {"OMNIGENT_FEATURES": "automations_v2" if persistent else "-automations_v2"}
@@ -688,6 +693,29 @@ async def test_update_moves_and_clears_the_task_project(
     cleared = await auth_client.patch(task_url, json={"project_id": None}, headers=_headers())
     assert cleared.status_code == 200, cleared.text
     assert cleared.json()["project_id"] is None
+
+
+async def test_task_projects_are_refused_without_a_project_store(
+    runtime_init: None,
+    db_uri: str,
+    tmp_path: Path,
+    mock_llm: ControllableMockClient,
+) -> None:
+    app = _build_app(db_uri, tmp_path, projects=False)
+    _make_user(db_uri)
+    _register_host(app, "4b653f6031f35d168cc0b37caa1306d1", "alice@example.com")
+    async with _serve(app, mock_llm, tmp_path) as client:
+        info = (await client.get("/v1/info", headers=_headers())).json()
+        assert info["scheduled_task_projects"] is False
+        filed = await client.post(
+            "/v1/scheduled-tasks", json=_create_body(project_id="p" * 32), headers=_headers()
+        )
+        assert filed.status_code == 404, filed.text
+        created = await client.post("/v1/scheduled-tasks", json=_create_body(), headers=_headers())
+        assert created.status_code == 200, created.text
+        task_url = f"/v1/scheduled-tasks/{created.json()['id']}"
+        moved = await client.patch(task_url, json={"project_id": "p" * 32}, headers=_headers())
+        assert moved.status_code == 404, moved.text
 
 
 async def test_single_user_task_projects_are_the_projects_api_projects(

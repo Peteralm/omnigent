@@ -51,13 +51,14 @@ class _Resp:
 class _RecordingClient:
     """Records the verb/url/json of each call and returns a scripted response."""
 
-    def __init__(self, response: _Resp | None = None) -> None:
+    def __init__(self, response: _Resp | None = None, *, info: _Resp | None = None) -> None:
         self.calls: list[tuple[str, str, dict[str, object] | None]] = []
         self._response = response or _Resp(body={"id": "t1"})
+        self._info = info or _Resp(body={"scheduled_task_projects": True})
 
     async def get(self, url: str, *, timeout: object = None) -> _Resp:
         self.calls.append(("GET", url, None))
-        return self._response
+        return self._info if url == "/v1/info" else self._response
 
     async def post(self, url: str, *, json: dict | None = None, timeout: object = None) -> _Resp:
         self.calls.append(("POST", url, json))
@@ -85,13 +86,14 @@ async def test_create_posts_payload() -> None:
                 "agent_id": "ag_1",
                 "workspace": "/repo",
                 "host_id": "host_1",
+                "project_id": "proj_1",
                 "base_branch": "main",
                 "unexpected": "dropped",
             }
         ),
         server_client=client,
     )
-    verb, url, body = client.calls[0]
+    verb, url, body = client.calls[-1]
     assert (verb, url) == ("POST", "/v1/scheduled-tasks")
     assert body == {
         "name": "nightly",
@@ -100,6 +102,7 @@ async def test_create_posts_payload() -> None:
         "agent_id": "ag_1",
         "workspace": "/repo",
         "host_id": "host_1",
+        "project_id": "proj_1",
     }  # unknown fields filtered out
     assert json.loads(out)["id"] == "t1"
 
@@ -157,15 +160,21 @@ async def test_update_forwards_agent_switch_cost_cap_and_project() -> None:
         ),
         server_client=client,
     )
-    _, _, body = client.calls[0]
+    _, _, body = client.calls[-1]
     assert body == {"agent_id": "ag_pi", "max_cost_usd": 2.5, "project_id": None}
 
 
 class _ProjectsClient(_RecordingClient):
     """Serves ``/v1/projects`` from a list; other calls get the scripted response."""
 
-    def __init__(self, projects: list[dict[str, str]], *, create_status: int = 200) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        projects: list[dict[str, str]],
+        *,
+        create_status: int = 200,
+        info: _Resp | None = None,
+    ) -> None:
+        super().__init__(info=info)
         self.projects = projects
         self.create_status = create_status
 
@@ -243,6 +252,42 @@ async def test_project_name_errors_never_reach_the_task_route(
     )
     assert error in json.loads(out)["error"]
     assert not [url for _, url, _ in client.calls if url.startswith("/v1/scheduled-tasks")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "info",
+    [_Resp(body={}), _Resp(body={"scheduled_task_projects": False}), _Resp(status_code=500)],
+    ids=["missing", "false", "info-fails"],
+)
+@pytest.mark.parametrize(
+    ("tool_name", "args"),
+    [
+        ("sys_scheduled_task_create", {"project_name": "new"}),
+        ("sys_scheduled_task_create", {"project_id": "proj_1"}),
+        ("sys_scheduled_task_update", {"scheduled_task_id": _TASK_ID, "project_id": None}),
+    ],
+    ids=["create-by-name", "create-by-id", "update-clear"],
+)
+async def test_project_args_are_refused_on_a_server_without_task_projects(
+    info: _Resp, tool_name: str, args: dict[str, object]
+) -> None:
+    """An older server would 422 the field, so nothing is created or sent."""
+    client = _ProjectsClient([], info=info)
+    out = await _execute_scheduled_task_tool(tool_name, json.dumps(args), server_client=client)
+    assert "does not support automation projects" in json.loads(out)["error"]
+    assert [url for _, url, _ in client.calls] == ["/v1/info"]
+
+
+@pytest.mark.asyncio
+async def test_calls_without_project_args_skip_the_capability_check() -> None:
+    client = _RecordingClient(info=_Resp(body={}))
+    await _execute_scheduled_task_tool(
+        "sys_scheduled_task_update",
+        json.dumps({"scheduled_task_id": _TASK_ID, "name": "renamed"}),
+        server_client=client,
+    )
+    assert [url for _, url, _ in client.calls] == [f"/v1/scheduled-tasks/{_TASK_ID}"]
 
 
 @pytest.mark.parametrize("project_id", ["0123456789abcdef0123456789abcdef", None])

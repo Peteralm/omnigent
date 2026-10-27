@@ -4861,8 +4861,21 @@ async def _execute_scheduled_task_tool(
             {"error": f"{tool_name}: project_name must be a string; use project_id: null to clear"}
         )
     project_name = raw_project_name if isinstance(raw_project_name, str) else None
+    wants_project = tool_name in ("sys_scheduled_task_create", "sys_scheduled_task_update") and (
+        "project_name" in args or "project_id" in args
+    )
 
     try:
+        if wants_project:
+            # Older servers reject the field; refuse before creating a project for it.
+            info = await server_client.get("/v1/info", timeout=30.0)
+            if info.status_code >= 400 or info.json().get("scheduled_task_projects") is not True:
+                return json.dumps(
+                    {
+                        "error": f"{tool_name}: this server does not support automation "
+                        "projects; retry without project_name or project_id"
+                    }
+                )
         if tool_name == "sys_scheduled_task_list":
             resp = await server_client.get("/v1/scheduled-tasks", timeout=30.0)
         elif tool_name == "sys_scheduled_task_create":

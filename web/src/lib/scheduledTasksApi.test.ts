@@ -76,6 +76,13 @@ describe("listScheduledTasks", () => {
     });
   });
 
+  it("reads a task's project id", async () => {
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({ scheduled_tasks: [{ ...TASK_WIRE, project_id: "proj_1" }] }),
+    );
+    expect((await listScheduledTasks())[0].projectId).toBe("proj_1");
+  });
+
   it("returns [] when the server omits the key", async () => {
     fetchMock.mockResolvedValueOnce(mockResponse({}));
     await expect(listScheduledTasks()).resolves.toEqual([]);
