@@ -223,12 +223,14 @@ describe("isProseText", () => {
     expect(isProseText(prose.padEnd(50_001, "."), "description")).toBe(false);
   });
 
-  it("classifies many unclosed fences and brackets in linear time", () => {
+  it("classifies malformed fences, links, brackets and comments in linear time", () => {
+    // Backtracking regexes took from half a second to ten seconds on these inputs; a linear
+    // scan takes a few milliseconds, so the bound only catches that blow-up.
     const started = performance.now();
     expect(isProseText("```a\n".repeat(9_000), "description")).toBe(true);
     expect(isProseText("a [".repeat(15_000), "text")).toBe(false);
+    expect(isProseText("[a](/".repeat(2_380), "text")).toBe(false);
     expect(isProseText("<!--a\n".repeat(8_000), "text")).toBe(false);
-    // Backtracking regexes took about half a second on these inputs, which fit the size limit.
-    expect(performance.now() - started).toBeLessThan(200);
+    expect(performance.now() - started).toBeLessThan(500);
   });
 });

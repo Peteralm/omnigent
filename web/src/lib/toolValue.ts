@@ -314,8 +314,9 @@ const CODE_KEYS = new Set(["file text", "new text", "old text"]);
 // GitHub bodies' `<details>`, `<summary>` and `<br>` render as markdown and do not count.
 const MARKUP_TAG = /<\/?(?!(?:details|summary|br|sub|sup|kbd)\b)[A-Za-z][\w-]*(?:\s[^<>\n]*)?\/?>/i;
 // A link to a URL, path or anchor; `handlers[key](event)` in code does not match.
-// Bounded and unambiguous so that many unclosed brackets cannot backtrack quadratically.
-const MARKDOWN_LINK = /(?:^|[^\w\])])\[[^\]\n]{1,500}\]\([^\s)/#:]{0,2000}[/#:][^\s)]{0,2000}\)/m;
+// Each part stops at the next bracket, so malformed links cannot backtrack across the text.
+const MARKDOWN_LINK =
+  /(?:^|[^\w\])])\[[^[\]\n]{1,500}\]\([^\s()[\]/#:]{0,2000}[/#:][^\s()[\]]{0,2000}\)/m;
 // The chat renderer shows longer text as plain text without parsing markdown.
 const PROSE_MAX_CHARS = 50_000;
 // Weak alone: a shell comment reads as a heading and log lines as list items.
