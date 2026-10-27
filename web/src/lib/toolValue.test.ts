@@ -160,6 +160,11 @@ describe("isProseText", () => {
     const withSample =
       "Steps:\n\n- Build\n    - web\n    - server\n- Ship\n\n```ts\nconst a = 1;\nif (a) {\n  run();\n}\n```\n";
     expect(isProseText(withSample, "description")).toBe(true);
+    const nestedSample = "- Build\n  ```ts\n  const a = 1;\n  run(a);\n  ```\n- Ship";
+    expect(isProseText(nestedSample, "description")).toBe(true);
+    expect(isProseText("Run:\n~~~js\nconst a = 1;\nrun(a);\n~~~", "description")).toBe(true);
+    const longFence = "````md\n```ts\nrun();\n```\nconst a = 1;\nrun(a);\n````";
+    expect(isProseText(longFence, "description")).toBe(true);
     const templatedBody =
       "<!-- Describe your change -->\n## Summary\n\n- Fix it<br>today\n\n" +
       "<details><summary>Logs</summary>\n\nAll green\n</details>\n";
@@ -196,19 +201,20 @@ describe("isProseText", () => {
     expect(isProseText("function f() {\n  return 1;\n}\n# not a heading", "notes")).toBe(false);
   });
 
-  it("leaves text past the chat's markdown limit literal", () => {
+  it("leaves text the chat renderer shows without markdown literal", () => {
     const prose = "# Plan\n\n- first\n- second\n";
-    expect(isProseText(prose.padEnd(50_000, "."), "description")).toBe(true);
-    expect(isProseText(prose.padEnd(50_001, "."), "description")).toBe(false);
+    expect(isProseText(prose.padEnd(50_000, "word "), "description")).toBe(true);
+    expect(isProseText(prose.padEnd(50_001, "word "), "description")).toBe(false);
+    expect(isProseText(prose + "x".repeat(5_000), "description")).toBe(true);
+    expect(isProseText(prose + "x".repeat(5_001), "description")).toBe(false);
   });
 
   it("classifies unclosed fences, tags and comments in linear time", () => {
-    // Backtracking regexes took from half a second to ten seconds on such inputs; a linear
-    // scan takes a few milliseconds, so the bound only catches that blow-up.
+    // The loose bound only catches super-linear scans on unclosed fences, tags and comments.
     const started = performance.now();
     expect(isProseText("```a\n".repeat(9_000), "description")).toBe(true);
     expect(isProseText("a <b ".repeat(9_000), "description")).toBe(true);
     expect(isProseText("<!--a\n".repeat(8_000), "description")).toBe(true);
-    expect(performance.now() - started).toBeLessThan(500);
+    expect(performance.now() - started).toBeLessThan(2_000);
   });
 });

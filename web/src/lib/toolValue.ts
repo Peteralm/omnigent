@@ -3,6 +3,7 @@
 // payload the same way.
 
 import { stripAnsi } from "@/lib/ansi";
+import { isPathologicalText } from "@/lib/markdownLimits";
 
 const ACRONYMS: Record<string, string> = {
   ai: "AI",
@@ -298,18 +299,23 @@ const CODE_KEY_WORDS = new Set([
 // A markup tag such as `<instructions>`, which markdown would hide; autolinks do not match.
 // GitHub bodies' `<details>`, `<summary>` and `<br>` render as markdown and do not count.
 const MARKUP_TAG = /<\/?(?!(?:details|summary|br|sub|sup|kbd)\b)[A-Za-z][\w-]*(?:\s[^<>\n]*)?\/?>/i;
-// The chat renderer shows longer text as plain text without parsing markdown.
-const PROSE_MAX_CHARS = 50_000;
 
-// `text` without its closed ``` fences, in one pass; an unclosed fence stays.
+// `text` without its closed code fences, in one pass; an unclosed fence stays.
+// A fence may be indented under a list item and closes on a run at least as long.
 function withoutFencedCode(text: string): string {
   const kept: string[] = [];
-  let fenceStart: number | null = null;
+  let fence: { start: number; marker: string } | null = null;
   for (const line of text.split("\n")) {
-    if (fenceStart === null && line.startsWith("```")) fenceStart = kept.length;
-    else if (fenceStart !== null && /^```[ \t]*$/.test(line)) {
-      kept.length = fenceStart;
-      fenceStart = null;
+    const marker = /^[ \t]*(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence === null && marker !== undefined) fence = { start: kept.length, marker };
+    else if (
+      fence !== null &&
+      marker?.[0] === fence.marker[0] &&
+      marker.length >= fence.marker.length &&
+      line.trim() === marker
+    ) {
+      kept.length = fence.start;
+      fence = null;
       continue;
     }
     kept.push(line);
@@ -351,7 +357,7 @@ export function isProseText(text: string, key?: string): boolean {
   const keyWords = key === undefined ? [] : identifierWords(key);
   if (!keyWords.some((word) => hasKeyWord(PROSE_KEY_WORDS, word))) return false;
   if (keyWords.some((word) => hasKeyWord(CODE_KEY_WORDS, word))) return false;
-  if (text.length > PROSE_MAX_CHARS || looksLikeData(text)) return false;
+  if (isPathologicalText(text) || looksLikeData(text)) return false;
   // Fenced and inline code render literally as markdown too, so only the rest is checked.
   const outsideCode = withoutHtmlComments(withoutFencedCode(text).replace(/`[^`\n]*`/g, ""));
   if (MARKUP_TAG.test(outsideCode)) return false;
