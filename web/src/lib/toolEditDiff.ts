@@ -2,6 +2,7 @@
 // removed line counts. Edit tools carry exact old/new replacement pairs; Codex's
 // `apply_patch` carries a per-file diff from the harness.
 
+import { stripOmnigentPrefix } from "@/lib/toolTitle";
 import { isRecord } from "@/lib/toolValue";
 
 export interface FileEditDiff {
@@ -35,8 +36,6 @@ const CONTEXT_LINES = 2;
 // line-by-line comparison costs old × new steps.
 const MAX_LINE_DIFF_CELLS = 250_000;
 
-const OMNIGENT_TOOL_PREFIX = "mcp__omnigent__";
-
 /** Claude `Edit`/`MultiEdit`, Omnigent `sys_os_edit`, Pi and OpenCode `edit`. */
 const EDIT_PAIR_TOOLS = new Set(["Edit", "MultiEdit", "sys_os_edit", "edit"]);
 
@@ -45,9 +44,7 @@ export const FILE_EDIT_TOOL_NAMES: readonly string[] = [...EDIT_PAIR_TOOLS, "app
 
 /** The diff an edit call describes, or `null` when its arguments carry no change. */
 export function getFileEditDiff(name: string, args: Record<string, unknown>): FileEditDiff | null {
-  const tool = name.startsWith(OMNIGENT_TOOL_PREFIX)
-    ? name.slice(OMNIGENT_TOOL_PREFIX.length)
-    : name;
+  const tool = stripOmnigentPrefix(name);
   if (EDIT_PAIR_TOOLS.has(tool)) return pairsDiff(editPairs(args));
   if (tool === "apply_patch") return patchChangesDiff(args.changes);
   return null;
@@ -73,7 +70,7 @@ function editPairs(args: Record<string, unknown>): EditPair[] {
 }
 
 function pairsDiff(pairs: EditPair[]): FileEditDiff | null {
-  const hunks = pairs.map((pair) => lineDiff(splitLines(pair.oldText), splitLines(pair.newText)));
+  const hunks = pairs.map((pair) => lineDiff(...pairLines(pair)));
   const changed = hunks.filter((hunk) => hunk.some((line) => line.kind !== "context"));
   if (changed.length === 0) return null;
   const lines = changed.flatMap((hunk) => (changed.length > 1 ? [GAP, ...hunk] : hunk));
@@ -152,6 +149,16 @@ function splitLines(text: string): string[] {
   // A trailing newline ends the last line rather than starting another.
   if (lines.at(-1) === "") lines.pop();
   return lines;
+}
+
+function pairLines(pair: EditPair): [string[], string[]] {
+  const oldLines = splitLines(pair.oldText);
+  const newLines = splitLines(pair.newText);
+  // Only a final newline changed: show it as an added or removed blank line.
+  if (oldLines.length === newLines.length && oldLines.every((line, i) => line === newLines[i])) {
+    (pair.oldText.endsWith("\n") ? oldLines : newLines).push("");
+  }
+  return [oldLines, newLines];
 }
 
 /** Line diff of a replacement, trimmed to the changes and their nearby context. */

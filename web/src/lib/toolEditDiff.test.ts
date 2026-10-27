@@ -58,6 +58,26 @@ describe("getFileEditDiff", () => {
     ).toMatchObject({ text: "+line 1\n+line 2", additions: 2, removals: 0 });
   });
 
+  it("shows an edit that only adds or removes a final newline as a blank line", () => {
+    expect(getFileEditDiff("Edit", { old_string: "a", new_string: "a\n" })).toMatchObject({
+      text: " a\n+",
+      additions: 1,
+      removals: 0,
+    });
+    expect(getFileEditDiff("Edit", { old_string: "a\n", new_string: "a" })).toMatchObject({
+      text: " a\n-",
+      additions: 0,
+      removals: 1,
+    });
+    const batch = getFileEditDiff("MultiEdit", {
+      edits: [
+        { old_string: "x", new_string: "y" },
+        { old_string: "end", new_string: "end\n" },
+      ],
+    });
+    expect(batch).toMatchObject({ text: "@@\n-x\n+y\n@@\n end\n+", additions: 2, removals: 1 });
+  });
+
   it("returns null for a no-op, malformed, or non-edit call", () => {
     expect(getFileEditDiff("Edit", { old_string: "same", new_string: "same" })).toBeNull();
     expect(getFileEditDiff("Edit", { file_path: "a.py" })).toBeNull();

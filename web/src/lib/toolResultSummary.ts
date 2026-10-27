@@ -3,7 +3,7 @@
 
 import type { ToolState } from "@/lib/renderItems";
 import { type ShellToolOutput, parseShellToolOutput } from "@/lib/shellToolOutput";
-import { shellToolCall, toolCallCategory } from "@/lib/toolTitle";
+import { shellToolCall, stripOmnigentPrefix, toolCallCategory } from "@/lib/toolTitle";
 import {
   type ParsedToolOutput,
   editErrorMessage,
@@ -92,7 +92,10 @@ export function summarizeFileEdit(call: ToolCall): ToolResultSummary | null {
   if (call.state !== "output-available" || call.output === null) return generic;
   const error = editErrorMessage(call.output);
   if (error !== null) return failure(firstLine(error));
-  if (call.name === "apply_patch" && firstLine(call.output) !== CODEX_PATCH_APPLIED) return generic;
+  const appliedUnknown =
+    stripOmnigentPrefix(call.name) === "apply_patch" &&
+    firstLine(call.output) !== CODEX_PATCH_APPLIED;
+  if (appliedUnknown) return generic;
   const diff = getFileEditDiff(call.name, call.args);
   if (diff === null || diff.additions + diff.removals === 0) return generic;
   const counts: ToolResultSegment[] = [];

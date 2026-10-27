@@ -201,16 +201,21 @@ describe("summarizeFileEdit", () => {
     ).toEqual({ text: "Error: oldString not found in content", isError: true });
   });
 
-  it("shows no counts for Codex patch output that does not say it applied", () => {
-    // Older runners wrote the same output for applied and declined patches.
-    const legacy: ToolCall = {
-      name: "apply_patch",
-      args: { changes: [{ path: "/repo/app.py", kind: { type: "update" }, diff: "@@\n-a\n+b\n" }] },
-      output: "update /repo/app.py",
-      state: "output-available",
-    };
-    expect(summarizeFileEdit(legacy)).toBeNull();
-  });
+  it.each(["apply_patch", "mcp__omnigent__apply_patch"])(
+    "shows no counts for %s output that does not say it applied",
+    (name) => {
+      // Older runners wrote the same output for applied and declined patches.
+      const legacy: ToolCall = {
+        name,
+        args: {
+          changes: [{ path: "/repo/app.py", kind: { type: "update" }, diff: "@@\n-a\n+b\n" }],
+        },
+        output: "update /repo/app.py",
+        state: "output-available",
+      };
+      expect(summarizeFileEdit(legacy)).toBeNull();
+    },
+  );
 
   it("does not read a successful shell's [error] output as a failure", () => {
     const bash: ToolCall = {

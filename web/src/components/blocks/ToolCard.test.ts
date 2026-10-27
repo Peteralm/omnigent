@@ -483,6 +483,21 @@ describe("ToolCard registered views", () => {
     },
   );
 
+  it("shows a failed edit's unrecognized output as its error above the diff", async () => {
+    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
+    registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+    const { container } = renderCard({
+      name: "Edit",
+      arguments: { file_path: "/repo/a.py", old_string: "x", new_string: "y" },
+      output: "Permission denied: /repo/a.py",
+      state: "output-error",
+    });
+    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+    const errorBox = container.querySelector("div.text-destructive.border");
+    expect(errorBox?.textContent).toBe("Permission denied: /repo/a.py");
+    expect(container.textContent).toContain("+y");
+  });
+
   it.each([
     ["input-available", "Waiting for output"],
     ["cancelled", "Tool was cancelled before output arrived."],

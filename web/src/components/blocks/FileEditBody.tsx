@@ -13,7 +13,12 @@ export function FileEditBody({ call }: { call: ToolCall }) {
   // Arguments may still be streaming in; the card shows the pending state below.
   const running = output === null && state === "input-available";
   const diff = useMemo(() => getFileEditDiff(name, args), [name, args]);
-  const error = useMemo(() => (output === null ? null : editErrorMessage(output)), [output]);
+  const error = useMemo(() => {
+    if (output === null) return null;
+    // A failed call's output is its error even without a recognized prefix.
+    const failure = state === "output-error" && output.trim() !== "" ? output.trim() : null;
+    return editErrorMessage(output) ?? failure;
+  }, [output, state]);
   return (
     <div className="space-y-2">
       {error !== null && (
