@@ -130,6 +130,16 @@ describe("ToolValueView", () => {
     expect(batch.textContent).toContain("Run **the app**");
   });
 
+  it("keeps list items literal when the list's key names code", () => {
+    const script = "# set up the environment\npip install -r requirements.txt\n- **note**: slow\n";
+    const container = renderValue({ commands: [script, script] });
+    expect(screen.queryByTestId("tool-prose-value")).toBeNull();
+    expect([...container.querySelectorAll("pre")].map((pre) => pre.textContent)).toEqual([
+      script,
+      script,
+    ]);
+  });
+
   it("labels inherited object names as plain words", () => {
     renderValue({ constructor: "x" });
     expect(screen.getByText("Constructor")).toBeInTheDocument();

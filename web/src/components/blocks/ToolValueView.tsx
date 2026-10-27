@@ -61,7 +61,7 @@ function ValueNode({
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") return <span className="tabular-nums">{String(value)}</span>;
   if (typeof value === "string") return <StringValue text={value} fieldKey={fieldKey} />;
-  if (Array.isArray(value)) return <ListValue items={value} depth={depth} />;
+  if (Array.isArray(value)) return <ListValue items={value} depth={depth} fieldKey={fieldKey} />;
   if (isRecord(value)) {
     if (depth >= MAX_FIELD_DEPTH) return <CompactJson value={value} />;
     return <FieldList entries={Object.entries(value)} depth={depth} />;
@@ -77,10 +77,13 @@ function FieldList({
   entries,
   depth,
   subgrid = false,
+  itemKey,
 }: {
   entries: [string, unknown][];
   depth: number;
   subgrid?: boolean;
+  /** For list items, the list's own key, which hints at their text better than the index. */
+  itemKey?: string;
 }) {
   if (entries.length === 0) return <EmptyValue />;
   const shown = entries.slice(0, MAX_LIST_ROWS);
@@ -98,7 +101,7 @@ function FieldList({
       >
         {shown.map(([key, value]) => (
           <FieldRow key={key} label={humanizeKey(key)} title={key} framed={framed}>
-            <ValueNode value={value} depth={depth + 1} fieldKey={key} />
+            <ValueNode value={value} depth={depth + 1} fieldKey={itemKey ?? key} />
           </FieldRow>
         ))}
       </dl>
@@ -204,7 +207,15 @@ function ProseValue({ text }: { text: string }) {
   );
 }
 
-function ListValue({ items, depth }: { items: unknown[]; depth: number }) {
+function ListValue({
+  items,
+  depth,
+  fieldKey,
+}: {
+  items: unknown[];
+  depth: number;
+  fieldKey?: string;
+}) {
   if (items.length === 0) return <EmptyValue />;
   const isChipList =
     items.length <= MAX_INLINE_CHIPS &&
@@ -238,6 +249,7 @@ function ListValue({ items, depth }: { items: unknown[]; depth: number }) {
     <FieldList
       entries={items.map((item, index): [string, unknown] => [String(index + 1), item])}
       depth={depth}
+      itemKey={fieldKey}
     />
   );
 }

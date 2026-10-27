@@ -312,7 +312,8 @@ const CODE_KEY_WORDS = new Set([
 const CODE_KEYS = new Set(["file text", "new text", "old text"]);
 // A markup tag such as `<instructions>`, which markdown would hide; autolinks do not match.
 const MARKUP_TAG = /<\/?[A-Za-z][\w-]*(?:\s[^<>\n]*)?\/?>/;
-const MARKDOWN_LINK = /\[[^\]\n]+\]\(\S+\)/;
+// A link to a URL, path or anchor; `handlers[key](event)` in code does not match.
+const MARKDOWN_LINK = /(?:^|[^\w\])])\[[^\]\n]+\]\([^\s)]*[/#:][^\s)]*\)/m;
 // Weak alone: a shell comment reads as a heading and log lines as list items.
 const MARKDOWN_SIGNS = [
   /^#{1,6} \S/m, // heading
@@ -340,7 +341,7 @@ function looksLikeData(text: string): boolean {
 // markdown link or two kinds of markdown syntax mark prose.
 export function isProseText(text: string, key?: string): boolean {
   const keyWords = key === undefined ? [] : identifierWords(key);
-  if (keyWords.some((word) => CODE_KEY_WORDS.has(word))) return false;
+  if (keyWords.some((word) => hasKeyWord(CODE_KEY_WORDS, word))) return false;
   if (CODE_KEYS.has(keyWords.join(" "))) return false;
   if (looksLikeData(text)) return false;
   // Fenced and inline code render literally as markdown too, so only the rest is checked.
@@ -353,7 +354,18 @@ export function isProseText(text: string, key?: string): boolean {
     (line) => !/^\s+(?:[-*+]|\d+\.) /.test(line) && /^(?:\t| {4})|[;{}]\s*$/.test(line),
   ).length;
   if (codeLike * 4 > lines.length) return false;
-  if (keyWords.some((word) => PROSE_KEY_WORDS.has(word))) return true;
-  if (MARKDOWN_LINK.test(text)) return true;
-  return MARKDOWN_SIGNS.filter((sign) => sign.test(text)).length >= 2;
+  if (keyWords.some((word) => hasKeyWord(PROSE_KEY_WORDS, word))) return true;
+  if (MARKDOWN_LINK.test(outsideCode)) return true;
+  return MARKDOWN_SIGNS.filter((sign) => sign.test(outsideCode)).length >= 2;
+}
+
+// A key word or its plural (`commands`, `patches`, `queries`) in `words`.
+function hasKeyWord(words: ReadonlySet<string>, word: string): boolean {
+  const singulars = [
+    word,
+    word.replace(/s$/, ""),
+    word.replace(/es$/, ""),
+    word.replace(/ies$/, "y"),
+  ];
+  return singulars.some((singular) => words.has(singular));
 }

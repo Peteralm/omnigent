@@ -172,6 +172,9 @@ describe("isProseText", () => {
     for (const key of ["oldText", "newText", "old_str", "new_str", "file_text", "output", "log"]) {
       expect(isProseText("## Setup\n\n- Run **the app**\n", key)).toBe(false);
     }
+    for (const key of ["commands", "scripts", "patches", "queries", "diffs"]) {
+      expect(isProseText("## Setup\n\n- Run **the app**\n", key)).toBe(false);
+    }
   });
 
   it("keeps data, markup and stack traces literal under a prose field name", () => {
@@ -192,6 +195,7 @@ describe("isProseText", () => {
     expect(isProseText("[#11607](https://x/pull/11607) follow-up\nmore", "text")).toBe(true);
     expect(isProseText("# Plan\n\n- first\n- second")).toBe(true);
     expect(isProseText("See **this** part\n- and more")).toBe(true);
+    expect(isProseText("Read [the guide](docs/guide.md)\nfirst")).toBe(true);
   });
 
   it("does not read plain text, code, logs or JSON as markdown", () => {
@@ -202,5 +206,7 @@ describe("isProseText", () => {
     expect(isProseText('{\n  "a": "[x](y)"\n}')).toBe(false);
     expect(isProseText('["a", "[x](y)"]')).toBe(false);
     expect(isProseText("def f():\n    return 1\n    # [x](y)")).toBe(false);
+    expect(isProseText("result = handlers[key](arg)\nprint(result)", "input")).toBe(false);
+    expect(isProseText("Run `**a**` and `[x](https://y)`\n```\n# h\n- x\n```\n")).toBe(false);
   });
 });
