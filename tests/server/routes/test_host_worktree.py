@@ -23,7 +23,7 @@ from omnigent.host.frames import (
     HostRemoveWorktreeFrame,
     decode_host_frame,
 )
-from omnigent.host.git_worktree import _GIT_TIMEOUT_S, WORKTREE_CREATE_BUDGET_S
+from omnigent.host.git_worktree import WORKTREE_CREATE_BUDGET_S
 from omnigent.server.host_registry import HostRegistry
 from omnigent.server.routes._host_worktree import (
     WorktreeHostUnavailableError,
@@ -341,8 +341,9 @@ async def test_create_worktree_outwaits_a_checkout_longer_than_the_short_bound(
     """
     import omnigent.server.routes._host_worktree as hw_mod
 
-    # A successful create can run one metadata git command past its budget.
-    assert hw_mod._WORKTREE_CREATE_TIMEOUT_S > WORKTREE_CREATE_BUDGET_S + _GIT_TIMEOUT_S
+    # The server outwaits the host's whole budget by exactly its normal 150 s margin.
+    assert hw_mod._WORKTREE_TIMEOUT_S == 150.0
+    assert hw_mod._WORKTREE_CREATE_TIMEOUT_S == WORKTREE_CREATE_BUDGET_S + 150.0
     monkeypatch.setattr(hw_mod, "_WORKTREE_TIMEOUT_S", 0.05)
 
     registry = HostRegistry()

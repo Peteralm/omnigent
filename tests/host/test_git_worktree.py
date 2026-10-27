@@ -787,44 +787,43 @@ class _TimedGit:
         or ``"worktree add"``.
     :param fail: Commands to report as failed instead of running.
     :param time_out: Commands that use their whole timeout and are killed.
-    :param bounds: ``(command, timeout)`` for each git call, in order.
+    :param hang_after: Every command after the first one with this key also
+        uses its whole timeout and is killed, e.g. ``"fetch"``.
+    :param bounds: ``(command, timeout)`` each git process was given, in order.
     :param windows: ``(command, start, latest end)`` on the fake clock for
-        each git call, where the latest end is when its timeout kills it.
+        each git process, where the latest end is when its timeout kills it.
     """
 
     elapsed_s: dict[str, float] = field(default_factory=dict)
     fail: set[str] = field(default_factory=set)
     time_out: set[str] = field(default_factory=set)
-    bounds: list[tuple[str, float | None]] = field(default_factory=list)
+    hang_after: str | None = None
+    bounds: list[tuple[str, float]] = field(default_factory=list)
     windows: list[tuple[str, float, float]] = field(default_factory=list)
 
 
 @pytest.fixture
 def timed_git(monkeypatch: pytest.MonkeyPatch) -> _TimedGit:
-    """Run git commands against a controllable monotonic clock."""
+    """Run git processes against a controllable monotonic clock."""
     timed = _TimedGit()
     clock = [1000.0]
-    real_run = git_worktree_module._run_git
+    real_exec = git_worktree_module._exec_git
     monkeypatch.setattr(git_worktree_module, "time", SimpleNamespace(monotonic=lambda: clock[0]))
 
-    def run(
-        argv: list[str], *, cwd: str, timeout: float | None = None
-    ) -> subprocess.CompletedProcess[str]:
+    def run(argv: list[str], *, cwd: str, timeout: float) -> subprocess.CompletedProcess[str]:
         command = f"worktree {argv[1]}" if argv[0] == "worktree" else argv[0]
-        bound = git_worktree_module._GIT_TIMEOUT_S if timeout is None else timeout
+        hangs = command in timed.time_out or timed.hang_after in {c for c, _ in timed.bounds}
         timed.bounds.append((command, timeout))
-        timed.windows.append((command, clock[0], clock[0] + bound))
-        if command in timed.time_out:
-            clock[0] += bound
-            raise WorktreeError(f"git command timed out after {bound:.0f}s") from (
-                subprocess.TimeoutExpired(argv, bound)
-            )
+        timed.windows.append((command, clock[0], clock[0] + timeout))
+        if hangs:
+            clock[0] += timeout
+            raise subprocess.TimeoutExpired(argv, timeout)
         clock[0] += timed.elapsed_s.get(command, 0.0)
         if command in timed.fail:
             return subprocess.CompletedProcess(argv, 1, "", f"{command} failed")
-        return real_run(argv, cwd=cwd, timeout=timeout)
+        return real_exec(argv, cwd=cwd, timeout=timeout)
 
-    monkeypatch.setattr(git_worktree_module, "_run_git", run)
+    monkeypatch.setattr(git_worktree_module, "_exec_git", run)
     return timed
 
 
@@ -856,28 +855,47 @@ def test_create_worktree_size_scaling_commands_share_one_budget(
     )
 
     # The pinned checkout's rollback keeps min(120 s, a quarter of the budget) in reserve.
-    assert [bound for bound in timed_git.bounds if bound[1] is not None] == [
+    size_scaling = {"fetch", "worktree add", "checkout"}
+    assert [bound for bound in timed_git.bounds if bound[0] in size_scaling] == [
         ("fetch", 880.0),
         ("worktree add", 780.0),
         ("checkout", 580.0),
     ]
 
 
-def test_create_worktree_stops_once_budget_is_spent(git_repo: Path, timed_git: _TimedGit) -> None:
-    """A fetch that uses the whole budget fails the create before ``worktree add`` starts."""
+@pytest.mark.parametrize(
+    ("timeout_s", "fetch_elapsed_s", "hang_after"),
+    [(1000.0, 1000.0, None), (1000.0, 870.0, "fetch"), (140.0, 100.0, "fetch")],
+    ids=["fetch-spends-budget", "metadata-after-fetch", "legacy-metadata-after-fetch"],
+)
+def test_create_worktree_stops_once_budget_is_spent(
+    git_repo: Path,
+    timed_git: _TimedGit,
+    timeout_s: float,
+    fetch_elapsed_s: float,
+    hang_after: str | None,
+) -> None:
+    """Once fetch, or a metadata command after it, reaches the deadline, the create fails
+    before ``worktree add`` starts, without overrunning the budget's reserve."""
     source = _subdirectory_repo_with_unfetched_base(git_repo)
-    timed_git.elapsed_s["fetch"] = 1000.0
+    timed_git.elapsed_s["fetch"] = fetch_elapsed_s
+    timed_git.hang_after = hang_after
+    reserve = min(git_worktree_module._GIT_TIMEOUT_S, timeout_s / 4)
 
-    with pytest.raises(WorktreeError, match="worktree creation timed out after 1000s"):
+    with pytest.raises(WorktreeError, match=f"worktree creation timed out after {timeout_s:.0f}s"):
         create_worktree(
             repo_path=str(source),
             branch_name="feature/budget",
             base_branch="origin/main",
-            timeout_s=1000.0,
+            timeout_s=timeout_s,
         )
 
     assert "worktree add" not in {command for command, _ in timed_git.bounds}
     assert not _branch_exists(git_repo, "feature/budget")
+    assert max(end for _, _, end in timed_git.windows) <= 1000.0 + timeout_s
+    if hang_after is not None:
+        # The stalled metadata command was cut off where the work part of the budget ends.
+        assert timed_git.windows[-1][2] == 1000.0 + timeout_s - reserve
 
 
 @pytest.mark.parametrize(
