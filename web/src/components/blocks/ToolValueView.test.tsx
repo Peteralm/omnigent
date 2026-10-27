@@ -149,7 +149,7 @@ describe("ToolValueView", () => {
     expect(batch.textContent).toContain("Run **the app**");
   });
 
-  it("keeps list items literal when the list's key names code", () => {
+  it("judges list items by the list's key, not their index", async () => {
     const script = "# set up the environment\npip install -r requirements.txt\n- **note**: slow\n";
     const container = renderValue({ commands: [script, script] });
     expect(screen.queryByTestId("tool-prose-value")).toBeNull();
@@ -157,6 +157,13 @@ describe("ToolValueView", () => {
       script,
       script,
     ]);
+    cleanup();
+    // Long enough to skip the chip list, so each item goes through the prose check.
+    const review =
+      "Looks good to me overall.\n\n- [see the plan](https://x/a)\n- ship after CI passes";
+    renderValue({ comments: [review, review] });
+    expect(await screen.findAllByTestId("tool-prose-value")).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "see the plan" })).toHaveLength(2);
   });
 
   it("labels inherited object names as plain words", () => {
