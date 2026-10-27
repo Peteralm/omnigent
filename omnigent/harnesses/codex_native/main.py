@@ -2287,17 +2287,7 @@ def _codex_rollout_records_from_session_items(
         if item.get("type") == "compaction":
             compacted_msgs = item.get("compacted_messages")
             if isinstance(compacted_msgs, list) and compacted_msgs:
-                replacement_history = [
-                    {
-                        **message,
-                        "content": sanitize_replayed_image_blocks(message["content"]),
-                    }
-                    if isinstance(message, dict)
-                    and message.get("type") == "message"
-                    and "content" in message
-                    else message
-                    for message in compacted_msgs
-                ]
+                replacement_history = [_sanitize_compacted_item(item) for item in compacted_msgs]
                 replacement_call_ids = {
                     message.get("call_id")
                     for message in replacement_history
@@ -2725,6 +2715,23 @@ def _codex_function_call_payload_from_session_item(
     if isinstance(namespace, str) and namespace:
         payload["namespace"] = namespace
     return payload
+
+
+def _sanitize_compacted_item(item: object) -> object:
+    """Replace omitted images only in native message and tool-output content."""
+    if not isinstance(item, dict):
+        return item
+    item_type = item.get("type")
+    if not isinstance(item_type, str):
+        return item
+    field = {
+        "message": "content",
+        "function_call_output": "output",
+        "custom_tool_call_output": "output",
+    }.get(item_type)
+    if field is None or field not in item:
+        return item
+    return {**item, field: sanitize_replayed_image_blocks(item[field])}
 
 
 def _codex_function_call_output_payload_from_session_item(

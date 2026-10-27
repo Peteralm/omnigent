@@ -404,7 +404,10 @@ def test_rollout_records_do_not_carry_interrupted_call_across_compaction() -> No
     )
 
 
-def test_rollout_records_downgrade_image_stripped_by_compaction_storage() -> None:
+@pytest.mark.parametrize(
+    "item_type", ["message", "function_call_output", "custom_tool_call_output"]
+)
+def test_rollout_records_downgrade_image_stripped_by_compaction_storage(item_type: str) -> None:
     """A stored Responses image marker cannot poison Codex replacement history."""
     pixels = bytes(range(256)) * 3
     png = BytesIO()
@@ -428,6 +431,13 @@ def test_rollout_records_downgrade_image_stripped_by_compaction_storage() -> Non
             "content": [{"type": "output_text", "text": "answer"}],
         },
     ]
+    content_field = "content" if item_type == "message" else "output"
+    if item_type != "message":
+        messages[0] = {
+            "type": item_type,
+            "call_id": "call_image",
+            "output": messages[0]["content"],
+        }
     stored = CompactionData(
         summary="summary",
         last_item_id="msg_before",
@@ -435,7 +445,7 @@ def test_rollout_records_downgrade_image_stripped_by_compaction_storage() -> Non
         compacted_messages=messages,
     )
     assert stored.compacted_messages is not None
-    stored_content = stored.compacted_messages[0]["content"]
+    stored_content = stored.compacted_messages[0][content_field]
     assert stored_content[1]["image_url"] == (
         "[image/png content omitted from the compaction snapshot]"
     )
@@ -452,8 +462,11 @@ def test_rollout_records_downgrade_image_stripped_by_compaction_storage() -> Non
     history = next(record for record in records if record["type"] == "compacted")["payload"][
         "replacement_history"
     ]
-    assert [message["role"] for message in history] == ["user", "assistant"]
-    replayed_content = history[0]["content"]
+    assert history[0]["type"] == item_type
+    assert history[1] == messages[1]
+    if item_type != "message":
+        assert history[0]["call_id"] == "call_image"
+    replayed_content = history[0][content_field]
     assert [block["type"] for block in replayed_content] == [
         "input_text",
         "input_text",
@@ -463,7 +476,22 @@ def test_rollout_records_downgrade_image_stripped_by_compaction_storage() -> Non
     ]
     assert "image/png" in replayed_content[1]["text"]
     assert replayed_content[2:] == stored_content[2:]
-    assert messages[0]["content"][1]["image_url"] == data_uri
+    assert messages[0][content_field][1]["image_url"] == data_uri
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        {"type": "function_call_output", "output": "literal output"},
+        {"type": "function_call", "arguments": '{"type":"input_image","image_url":"text"}'},
+        {"type": "custom_tool_call", "input": [{"type": "input_image", "image_url": "text"}]},
+        {"type": []},
+        None,
+    ],
+)
+def test_compacted_image_sanitization_preserves_non_content_values(item: object) -> None:
+    """Tool arguments, plain outputs, and unknown records are left intact."""
+    assert codex_native._sanitize_compacted_item(item) == item
 
 
 def test_codex_event_msg_record_ignores_non_list_content() -> None:
