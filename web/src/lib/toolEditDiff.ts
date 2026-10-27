@@ -132,16 +132,10 @@ function unifiedDiffBody(diff: string): string[] {
   const lines = splitLines(diff);
   const firstHunk = lines.findIndex((line) => line.startsWith("@@"));
   if (firstHunk !== -1) return lines.slice(firstHunk);
-  // Without a hunk header, file headers are a leading "---"/"+++" pair; a later
+  // Without a hunk header, file headers are one leading "---"/"+++" pair; a later
   // "--- x" is a removed "-- x" line.
-  let bodyStart = 0;
-  while (
-    lines[bodyStart]?.startsWith("--- ") === true &&
-    lines[bodyStart + 1]?.startsWith("+++ ") === true
-  ) {
-    bodyStart += 2;
-  }
-  return lines.slice(bodyStart);
+  const hasHeaders = lines[0]?.startsWith("--- ") === true && lines[1]?.startsWith("+++ ") === true;
+  return lines.slice(hasHeaders ? 2 : 0);
 }
 
 function splitLines(text: string): string[] {

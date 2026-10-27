@@ -196,6 +196,20 @@ describe("getFileEditDiff", () => {
     expect(diff?.text).toBe("--- q.sql\n+++ q.sql\n--- old note\n+-- new note");
   });
 
+  it("strips only one file header pair from an update diff without a hunk header", () => {
+    const diff = getFileEditDiff("apply_patch", {
+      changes: [
+        {
+          path: "notes.txt",
+          kind: { type: "update" },
+          diff: "--- a/notes.txt\n+++ b/notes.txt\n--- old\n+++ new\n",
+        },
+      ],
+    });
+    expect(diff).toMatchObject({ additions: 1, removals: 1 });
+    expect(diff?.text).toBe("--- notes.txt\n+++ notes.txt\n--- old\n+++ new");
+  });
+
   it("skips an update diff's own file headers when counting", () => {
     const diff = getFileEditDiff("apply_patch", {
       changes: [

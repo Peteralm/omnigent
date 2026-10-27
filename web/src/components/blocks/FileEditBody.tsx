@@ -12,8 +12,8 @@ const EMPTY_FAILURE = "The edit failed with no output.";
 
 export function FileEditBody({ call }: { call: ToolCall }) {
   const { name, args, output, state } = call;
-  // With no output yet, the card shows the pending or cancelled state below instead.
-  const awaitingOutput = output === null;
+  // Before output arrives, the card shows the pending or cancelled state below instead.
+  const awaitingOutput = output === null && state !== "output-available";
   const diff = useMemo(() => getFileEditDiff(name, args), [name, args]);
   const error = useMemo(() => {
     if (output === null) return null;

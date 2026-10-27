@@ -556,6 +556,19 @@ describe("ToolCard registered views", () => {
     expect(container.textContent).toContain("M src/app.py");
   });
 
+  it("says a finished edit without output or a diff has no diff", async () => {
+    const actualViews = await vi.importActual<typeof ToolViewsModule>("./toolViews");
+    registeredViews.set("Edit", actualViews.toolViewFor("Edit")!);
+    const { container } = renderCard({
+      name: "Edit",
+      arguments: { file_path: "/repo/a.py" },
+      output: null,
+      state: "output-available",
+    });
+    fireEvent.click(container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!);
+    expect(screen.getByText("No diff recorded for this edit.")).toBeInTheDocument();
+  });
+
   it.each([
     ["input-available", "Waiting for output"],
     ["cancelled", "Tool was cancelled before output arrived."],

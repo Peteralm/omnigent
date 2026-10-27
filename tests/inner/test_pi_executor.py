@@ -2711,7 +2711,7 @@ class TestRunTurn(unittest.TestCase):
         _run(_test())
 
     def test_tool_error_event(self):
-        async def _test(result):
+        async def _test(result, error_text, output):
             executor = self._make_executor()
 
             fake_rpc = _PiRpcSession()
@@ -2754,16 +2754,19 @@ class TestRunTurn(unittest.TestCase):
             tool_completes = [e for e in events if isinstance(e, ToolCallComplete)]
             self.assertEqual(len(tool_completes), 1)
             self.assertEqual(tool_completes[0].status, ToolCallStatus.ERROR)
-            self.assertIn("Something broke", tool_completes[0].error)
+            self.assertIn(error_text, tool_completes[0].error)
             # The transcript keeps no error flag, so the mirrored text says it failed.
-            self.assertEqual(tool_completes[0].result, "Error: Something broke")
+            self.assertEqual(tool_completes[0].result, output)
 
-        for result in (
-            "Something broke",
-            {"content": [{"type": "text", "text": "Something broke"}]},
+        text_blocks = {"content": [{"type": "text", "text": "Something broke"}]}
+        image_only = {"content": [{"type": "image", "data": "aGk=", "mimeType": "image/png"}]}
+        for result, error_text, output in (
+            ("Something broke", "Something broke", "Error: Something broke"),
+            (text_blocks, "Something broke", "Error: Something broke"),
+            (image_only, "image/png", f"Error: {json.dumps(image_only)}"),
         ):
             with self.subTest(result=result):
-                _run(_test(result))
+                _run(_test(result, error_text, output))
 
     def test_message_end_with_error_stop_reason(self):
         async def _test():

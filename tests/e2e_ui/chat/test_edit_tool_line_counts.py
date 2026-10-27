@@ -82,31 +82,35 @@ def edit_session(
     :returns: ``(base_url, session_id, workspace)``.
     """
     workspace = Path(tempfile.mkdtemp(prefix="omnigent-e2e-edit-counts-"))
-    (workspace / "greet.py").write_text(_GREETING)
-    (workspace / "settings.py").write_text("DEBUG = False\n")
-    model = f"edit-counts-probe-{uuid.uuid4().hex[:8]}"
-    configure_mock_llm(
-        mock_llm_server_url,
-        [
-            _edit_call(
-                "call_edit_greeting",
-                {"path": "greet.py", "oldText": _OLD_LINES, "newText": _NEW_LINES},
-            ),
-            _edit_call(
-                "call_edit_settings",
-                {"path": "settings.py", "oldText": "DEBUG = True", "newText": "DEBUG = False"},
-            ),
-        ],
-        key=model,
-    )
-    set_fallback_mock_llm(mock_llm_server_url, model, _REPLY)
-    name = f"edit_counts_probe_{uuid.uuid4().hex[:8]}"
-    yaml_text = _AGENT_YAML.format(name=name, model=model, cwd=str(workspace))
-    session_id = _create_bundled_session(live_server, runner_id, yaml_text, operator_authored=True)
+    session_id: str | None = None
     try:
+        (workspace / "greet.py").write_text(_GREETING)
+        (workspace / "settings.py").write_text("DEBUG = False\n")
+        model = f"edit-counts-probe-{uuid.uuid4().hex[:8]}"
+        configure_mock_llm(
+            mock_llm_server_url,
+            [
+                _edit_call(
+                    "call_edit_greeting",
+                    {"path": "greet.py", "oldText": _OLD_LINES, "newText": _NEW_LINES},
+                ),
+                _edit_call(
+                    "call_edit_settings",
+                    {"path": "settings.py", "oldText": "DEBUG = True", "newText": "DEBUG = False"},
+                ),
+            ],
+            key=model,
+        )
+        set_fallback_mock_llm(mock_llm_server_url, model, _REPLY)
+        name = f"edit_counts_probe_{uuid.uuid4().hex[:8]}"
+        yaml_text = _AGENT_YAML.format(name=name, model=model, cwd=str(workspace))
+        session_id = _create_bundled_session(
+            live_server, runner_id, yaml_text, operator_authored=True
+        )
         yield (live_server, session_id, workspace)
     finally:
-        httpx.delete(f"{live_server}/v1/sessions/{session_id}", timeout=10.0)
+        if session_id is not None:
+            httpx.delete(f"{live_server}/v1/sessions/{session_id}", timeout=10.0)
         shutil.rmtree(workspace, ignore_errors=True)
 
 

@@ -1464,7 +1464,7 @@ def _failed_tool_output(result: JsonValue) -> str:
             item["text"]
             for item in content
             if isinstance(item, dict) and isinstance(item.get("text"), str)
-        )
+        ) or json.dumps(result)
     else:
         text = json.dumps(result)
     return text if _ERROR_LEAD_RE.match(text) else f"Error: {text}"
